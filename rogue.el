@@ -3,8 +3,7 @@
 ;;; Commentary:
 ;;; Not participating in 7drl, but it inspired me to create something, anyway.
 
-;;; License:
-;;; None yet.
+;;; License: GNU GPLv3
 
 ;;; Code:
 
