@@ -15,7 +15,8 @@
 
 ;;; Display ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defconst +rogue-player-symbol+ "@" "Representation of the player on the board.")
+(defconst +rogue-player-symbol+ "@"
+  "Representation of the player on the board.")
 
 ;;; Game Parameters ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -36,8 +37,7 @@
 (defconst +rogue/door-left+ "┫" "Left door segment.")
 (defconst +rogue/door-bottom+ "┳" "Bottom door segment.")
 (defconst +rogue/door-top+ "┻" "Top door segment.")
-(defconst +rogue/empty-tile+ " "
-  "The representation of an empty dungeon tile.")
+(defconst +rogue/empty-tile+ " " "The representation of an empty dungeon tile.")
 
 ;; Player related
 
@@ -93,8 +93,8 @@
 
 ;;; Game Config ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defconst rogue-mode-map
-  (let ((map (make-sparse-keymap 'rogue-mode-map)))
+(defconst rogue/dungeon-keymap
+  (let ((map (make-sparse-keymap 'rogue/dungeon-keymap)))
     (define-key map [left] #'rogue/player/move-left)
     (define-key map [right] #'rogue/player/move-right)
     (define-key map [up] #'rogue/player/move-up)
@@ -115,7 +115,7 @@
   special-mode
   "Rogue"
   "A mode for playing a roguelike."
-  (use-local-map rogue-mode-map)
+  (use-local-map rogue/dungeon-keymap)
   (set-buffer-multibyte t)
   (rogue/init))
 
@@ -417,8 +417,8 @@ Returns the corresponding door if one exists, nil otherwise."
 
 ;;; Fight ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defconst rogue-fight-map
-  (let ((map (make-sparse-keymap 'rogue-fight-map)))
+(defconst rogue/fight-keymap
+  (let ((map (make-sparse-keymap 'rogue/fight-keymap)))
     (define-key map "a" #'rogue/fight/weapon-attack)
     (define-key map "s" #'rogue/fight/cast-spell)
     (define-key map "q" #'rogue/fight/quit)
@@ -435,7 +435,7 @@ Returns the corresponding door if one exists, nil otherwise."
     (setq *rogue-current-monster* monster)
     (push (format "You are now fighting %s" (rogue/monster/type monster))
           *rogue-fight-log*))
-  (use-local-map rogue-fight-map)
+  (use-local-map rogue/fight-keymap)
   (rogue/draw/fight)
   (message "Started fighting"))
 
@@ -451,7 +451,7 @@ Returns the corresponding door if one exists, nil otherwise."
                   (rogue/monster/type *rogue-current-monster*))
          (setq *rogue-current-monster* nil)
          (setq *rogue-fight-log* nil)
-         (use-local-map rogue-mode-map)
+         (use-local-map rogue/dungeon-keymap)
          (rogue/draw/dungeon))))
 
 (defun rogue/fight/cannot-move ()
