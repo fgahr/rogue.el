@@ -1,0 +1,13 @@
+* rogue.el -- A Simple Roguelike for Emacs
+  This is mainly a learning project to familiarize myself with basic Emacs
+  programming.
+
+  Inspired by 7drl, although having no playing experience, I decided to try my
+  hand at a little roguelike myself. The limitations of Elisp as a language
+  do not really hurt here.
+
+  As of now, I have no idea how to properly distribute Elisp code. For now,
+  open the =rogue.el= file, then ~M-x eval-buffer~ and ~M-x rogue~.
+
+  I will attempt to add some in-game documentation when the game matures and
+  there are actually interesting things to do.
