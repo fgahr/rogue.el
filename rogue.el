@@ -155,7 +155,7 @@
   (setq-local buffer-read-only nil)
   (erase-buffer)
   (rogue/draw/stat-header)
-  (let* ((dims (rogue/room/dimensions *rogue-current-room*))
+  (let* ((dims (rogue/room/dims *rogue-current-room*))
          (monsters (rogue/room/monsters *rogue-current-room*))
          (door-places (mapcar #'rogue/door/placement
                               (rogue/room/doors *rogue-current-room*)))
@@ -195,7 +195,7 @@
                   *rogue-player-max-hp*)))
 
 (defun rogue/draw/dungeon-row (n room-dims monsters door-places)
-  "Draw line N of a room with ROOM-DIMS size, MONSTERS, and DOOR-PLACES present."
+  "Draw line N of a room of size ROOM-DIMS, with MONSTERS and DOOR-PLACES."
   (let* ((left-pad (/ (- +rogue-room-max-side-length+
                          (rogue/dim/x room-dims))
                       2))
@@ -209,32 +209,36 @@
          (horiz-door-line (/ (1- dim-y) 2)))
     (insert padding)
     (cond
+     ;; Horizontal walls.
      ((= n 0)
       (rogue/draw/dungeon-wall-top dim-x has-north-door))
      ((= n (1- dim-y))
       (rogue/draw/dungeon-wall-bot dim-x has-south-door))
+     ;; Possible door elements at start and end.
      ((= n (1- horiz-door-line))
       (insert (if has-west-door +rogue/door-top+ +rogue/vertic-wall+))
-      (rogue/draw/dungeon-interior n room-dims monsters)
+      (rogue/draw/dungeon-interior n monsters)
       (insert (if has-east-door +rogue/door-top+ +rogue/vertic-wall+)))
      ((= n horiz-door-line)
       (insert (if has-west-door +rogue/empty-tile+ +rogue/vertic-wall+))
-      (rogue/draw/dungeon-interior n room-dims monsters)
+      (rogue/draw/dungeon-interior n monsters)
       (insert (if has-east-door +rogue/empty-tile+ +rogue/vertic-wall+)))
      ((= n (1+ horiz-door-line))
       (insert (if has-west-door +rogue/door-bottom+ +rogue/vertic-wall+))
-      (rogue/draw/dungeon-interior n room-dims monsters)
+      (rogue/draw/dungeon-interior n monsters)
       (insert (if has-east-door +rogue/door-bottom+ +rogue/vertic-wall+)))
+     ;; Normal segment, no doors.
      (t (insert +rogue/vertic-wall+)
-        (rogue/draw/dungeon-interior n room-dims monsters)
+        (rogue/draw/dungeon-interior n monsters)
         (insert +rogue/vertic-wall+)))
     (newline)))
 
-(defun rogue/draw/dungeon-interior (n room-dims monsters)
-  "Draw line N of the inside of the current room, with dimensions ROOM-DIMS.
+(defun rogue/draw/dungeon-interior (n monsters)
+  "Draw line N of the inside of the current room.
 
 Place the player and MONSTERS where appropriate."
-  (let ((y n))
+  (let ((y n)
+        (room-dims (rogue/room/dims *rogue-current-room*)))
     (dotimes (k (- (rogue/dim/x room-dims)
                    2))
       (let* ((x (+ k 1))
@@ -287,8 +291,8 @@ If HAS-DOOR is non-nil, add a door in its center."
          (current-room-no (rogue/room/number *rogue-current-room*))
          (target-room (rogue/level/room *rogue-current-level*
                                         (rogue/door/target door)))
-         (dims (rogue/room/dimensions target-room))
-         (center (rogue/dim/center (rogue/room/dimensions target-room)))
+         (dims (rogue/room/dims target-room))
+         (center (rogue/dim/center (rogue/room/dims target-room)))
          (back-door (seq-find (lambda (door)
                                 (= (rogue/door/target door) current-room-no))
                               (rogue/room/doors target-room)))
@@ -360,7 +364,7 @@ If HAS-DOOR is non-nil, add a door in its center."
   "Whether the player collided with the current room's borders."
   (let* ((x (rogue/pos/x *rogue-player-position*))
          (y (rogue/pos/y *rogue-player-position*))
-         (dims (rogue/room/dimensions *rogue-current-room*))
+         (dims (rogue/room/dims *rogue-current-room*))
          (dim-x (rogue/dim/x dims))
          (dim-y (rogue/dim/y dims)))
     (or (= x 0)
@@ -390,7 +394,7 @@ If HAS-DOOR is non-nil, add a door in its center."
 Returns the corresponding door if one exists, nil otherwise."
   (let* ((x (rogue/pos/x *rogue-player-position*))
          (y (rogue/pos/y *rogue-player-position*))
-         (dims (rogue/room/dimensions *rogue-current-room*))
+         (dims (rogue/room/dims *rogue-current-room*))
          (center (rogue/dim/center dims))
          (x-centered (= x (rogue/pos/x center)))
          (y-centered (= y (rogue/pos/y center)))
@@ -572,7 +576,7 @@ Possible sizes are delimited by +ROGUE-MIN-SIDE-LENGTH+ and
          (/ (- +rogue-room-max-side-length+ +rogue-room-min-side-length+) 2)))
     (+ (* 2 (/ +rogue-room-min-side-length+ 2)) (* 2 (random addend)) 1)))
 
-(defun rogue/rooms/random-monsters (level)
+(defun rogue/rooms/monsters (level)
   "Random monsters for a room in LEVEL."
   (cond ((= level 1)
          (seq-random-elt '((OGRE) (SKELETON SKELETON))))
@@ -592,7 +596,7 @@ relevant variables."
   (let* ((dimensions (rogue/dim (rogue/rooms/side-len)
                                 (rogue/rooms/side-len)))
          (doors (rogue/doors/place adjacent-rooms))
-         (monster-types (rogue/rooms/random-monsters level))
+         (monster-types (rogue/rooms/monsters level))
          (monsters (rogue/monsters/place-in-dim monster-types
                                                 dimensions))
          (objects '()))
@@ -603,23 +607,17 @@ relevant variables."
   "The number of ROOM."
   (nth 0 room))
 
-(defun rogue/room/dimensions (room)
+(defun rogue/room/dims (room)
   "The dimensions of ROOM."
   (nth 1 room))
 
 (defun rogue/room/center (room)
   "The center position of ROOM."
-  (rogue/dim/center (rogue/room/dimensions room)))
+  (rogue/dim/center (rogue/room/dims room)))
 
 (defun rogue/room/doors (room)
   "The list of doors from ROOM."
   (nth 2 room))
-
-(defun rogue/room/add-door (room door)
-  "Add DOOR to ROOM."
-  (let ((doors (cons door (rogue/room/doors room))))
-    (setcar (nthcdr 2 room)
-            doors)))
 
 (defun rogue/room/monsters (room)
   "The list of monsters from ROOM."
