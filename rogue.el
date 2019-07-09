@@ -37,6 +37,8 @@
 (defconst +rogue/door-left+ "┫" "Left door segment.")
 (defconst +rogue/door-bottom+ "┳" "Bottom door segment.")
 (defconst +rogue/door-top+ "┻" "Top door segment.")
+(defconst +rogue/stairs-up+ "⇑" "Stairs to another level.")
+(defconst +rogue/stairs-down+ "⇓" "Stairs to another level.")
 (defconst +rogue/empty-tile+ " " "The representation of an empty dungeon tile.")
 
 ;; Player related
@@ -70,9 +72,9 @@
   "The number of rooms per level. Must be less than 100.")
 (defconst +rogue-num-levels+ 3
   "The number of levels in the game.")
-(defconst +rogue-room-min-side-length+ 9
+(defconst +rogue-room-min-side-length+ 13
   "Minimal side length of a dungeon room.")
-(defconst +rogue-room-max-side-length+ 17
+(defconst +rogue-room-max-side-length+ 21
   "Maximal side length of a dungeon room.")
 
 (defvar *rogue-current-room* nil
@@ -122,8 +124,7 @@
 (defun rogue/init ()
   "Initialize the rooms, monsters, etc."
   (interactive)
-  (setq *rogue-levels* (mapcar #'rogue/levels/make
-                               (rogue/util/range 1 +rogue-num-levels+)))
+  (setq *rogue-levels* (rogue/levels/make-all +rogue-num-levels+))
   (setq *rogue-current-level* (assoc 1 *rogue-levels*))
   (setq *rogue-current-room* (rogue/level/room *rogue-current-level* 101))
   (setq *rogue-player-position* (rogue/room/center *rogue-current-room*))
@@ -533,7 +534,14 @@ Returns the corresponding door if one exists, nil otherwise."
 
 ;;; Levels ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun rogue/levels/make (level-number)
+(defun rogue/levels/make-all (num-levels)
+  "Create NUM-LEVELS levels and connect them."
+  (let ((raw-levels (mapcar #'rogue/levels/make-one
+                            (rogue/util/range 1 num-levels))))
+    ;; TODO
+    raw-levels))
+
+(defun rogue/levels/make-one (level-number)
   "Create and populate level LEVEL-NUMBER."
   (let* ((room-numbers (mapcar (lambda (x) (+ x (* 100 level-number)))
                                (rogue/util/range 1 +rogue-rooms-per-level+)))
@@ -579,7 +587,10 @@ Possible sizes are delimited by +ROGUE-MIN-SIDE-LENGTH+ and
 (defun rogue/rooms/monsters (level)
   "Random monsters for a room in LEVEL."
   (cond ((= level 1)
-         (seq-random-elt '((OGRE) (SKELETON SKELETON))))
+         (seq-random-elt '((OGRE)
+                           (SKELETON SKELETON)
+                           (GOAT GOAT SKELETON)
+                           )))
         ((= level 2)
          (seq-random-elt '((OGRE SKELETON) (CENTAUR))))
         ((= level 3)
@@ -695,6 +706,8 @@ A monster is represented by a structure as follows:
     (list type "O" (cons 5 5) 1 nil))
    ((eq type 'SKELETON)
     (list type "S" (cons 3 3) 1 nil))
+   ((eq type 'GOAT)
+    (list type "G" (cons 4 4) 2 nil))
    ((eq type 'CENTAUR)
     (list type "C" (cons 11 11) 3 nil))
    ((eq type 'MEDUSA)
