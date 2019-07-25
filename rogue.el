@@ -146,8 +146,10 @@
 
 (defun rogue/player/move-done ()
   "The function to call after the player made their move."
-  ;; TODO make monster moves, then draw again
-  (rogue/draw/dungeon))
+  (rogue/monsters/move)
+  (if (rogue/player/monster-collision-p)
+      (rogue/fight/start)
+    (rogue/draw/dungeon)))
 
 ;;; Graphics ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -384,7 +386,7 @@ If HAS-DOOR is non-nil, add a door in its center."
          (at-player-pos
           (seq-filter
            (lambda (monster)
-             (equal (rogue/monster/position monster) *rogue-player-position*))
+             (equal (rogue/monster/pos monster) *rogue-player-position*))
            monsters)))
     (unless (null at-player-pos)
       (car at-player-pos))))
@@ -692,9 +694,26 @@ At most one door is placed on each of the four walls."
 (defun rogue/monsters/monster-at (pos monsters)
   "Find the monster at POS in the list of MONSTERS."
   (seq-find (lambda (m)
-              (equal pos (rogue/monster/position m)))
+              (equal pos (rogue/monster/pos m)))
             monsters
             nil))
+
+(defun rogue/monsters/move ()
+  "Make monsters move towards the player."
+  (let ((monsters-after-move '()))
+    (dolist (m (rogue/room/monsters *rogue-current-room*))
+      (let* ((m-pos (rogue/monster/pos m))
+             (x-diff (- (rogue/pos/x *rogue-player-position*)
+                        (rogue/pos/x (rogue/monster/pos m))))
+             (y-diff (- (rogue/pos/y *rogue-player-position*)
+                        (rogue/pos/y (rogue/monster/pos m))))
+             (new-pos
+              (if (> (abs x-diff) (abs y-diff))
+                  (rogue/pos/add m-pos (rogue/pos (rogue/util/sign x-diff) 0))
+                (rogue/pos/add m-pos (cons 0 (rogue/util/sign y-diff))))))
+        (unless (rogue/monsters/monster-at new-pos monsters-after-move)
+          (rogue/monster/set-position m new-pos)
+          (push m monsters-after-move))))))
 
 (defun rogue/monsters/make (type)
   "Make a new monster of type TYPE.
@@ -736,7 +755,7 @@ A monster is represented by a structure as follows:
   "The damage dealt by MONSTER."
   (nth 3 monster))
 
-(defun rogue/monster/position (monster)
+(defun rogue/monster/pos (monster)
   "The current position of MONSTER."
   (nth 4 monster))
 
@@ -754,7 +773,7 @@ A monster is represented by a structure as follows:
     (setcar (nth 2 monster)
             (- current-hp damage))))
 
-;;; Utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Positioning ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun rogue/pos (x y)
   "The position at X, Y."
@@ -767,6 +786,11 @@ A monster is represented by a structure as follows:
 (defun rogue/pos/y (p)
   "The Y component of position P."
   (cdr p))
+
+(defun rogue/pos/add (pos-a pos-b)
+  "Add coordinates of position POS-A and POS-B."
+  (rogue/pos (+ (rogue/pos/x pos-a) (rogue/pos/x pos-b))
+             (+ (rogue/pos/y pos-a) (rogue/pos/y pos-b))))
 
 (defun rogue/pos/x-inc (p)
   "Increase the X component of position P."
@@ -811,6 +835,8 @@ A monster is represented by a structure as follows:
              (/ (rogue/dim/y dim)
                 2)))
 
+;;; Utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defun rogue/util/shuffle-list (sequence)
   "A list with the same elements as SEQUENCE but in randomized order."
   ;; Ordering is achieved by attaching a random number to each element which
@@ -850,5 +876,13 @@ A monster is represented by a structure as follows:
    ((null sequences) nil)
    ((null (car sequences)) t)
    (t (rogue/util/any-null-p (cdr sequences)))))
+
+(defun rogue/util/sign (number)
+  "The sign of NUMBER.
+
+-1 if NUMBER is negative, +1 if it is positive, and 0 if it is itself zero."
+  (cond ((> number 0) 1)
+        ((< number 0) -1)
+        (t 0)))
 
 ;;; rogue.el ends here
