@@ -217,7 +217,7 @@
       (rogue/draw/dungeon-wall-top dim-x has-north-door))
      ((= n (1- dim-y))
       (rogue/draw/dungeon-wall-bot dim-x has-south-door))
-     ;; Possible door elements at start and end.
+     ;; Possible door elements at west and east end.
      ((= n (1- horiz-door-line))
       (insert (if has-west-door +rogue/door-top+ +rogue/vertic-wall+))
       (rogue/draw/dungeon-interior n monsters)
@@ -386,7 +386,8 @@ If HAS-DOOR is non-nil, add a door in its center."
          (at-player-pos
           (seq-filter
            (lambda (monster)
-             (equal (rogue/monster/pos monster) *rogue-player-position*))
+             (rogue/pos/within-one (rogue/monster/pos monster)
+                                   *rogue-player-position*))
            monsters)))
     (unless (null at-player-pos)
       (car at-player-pos))))
@@ -792,6 +793,13 @@ A monster is represented by a structure as follows:
   (rogue/pos (+ (rogue/pos/x pos-a) (rogue/pos/x pos-b))
              (+ (rogue/pos/y pos-a) (rogue/pos/y pos-b))))
 
+(defun rogue/pos/within-one (pos-a pos-b)
+  "Whether two positions are in immediate vertical or horizontal proximity"
+  (let ((x-diff (rogue/util/abs (- (rogue/pos/x pos-a) (rogue/pos/x pos-b))))
+        (y-diff (rogue/util/abs (- (rogue/pos/y pos-a) (rogue/pos/y pos-b)))))
+    (or (and (= x-diff 0) (<= y-diff 1))
+        (and (= y-diff 0) (<= x-diff 1)))))
+
 (defun rogue/pos/x-inc (p)
   "Increase the X component of position P."
   (let ((x (rogue/pos/x p)))
@@ -876,6 +884,12 @@ A monster is represented by a structure as follows:
    ((null sequences) nil)
    ((null (car sequences)) t)
    (t (rogue/util/any-null-p (cdr sequences)))))
+
+(defun rogue/util/abs (number)
+  "The absolute magnitude of a number."
+  (if (< number 0)
+      (- number)
+    number))
 
 (defun rogue/util/sign (number)
   "The sign of NUMBER.
