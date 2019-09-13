@@ -10,6 +10,11 @@
 ;;; Some parts of the code could conceivably benefit from proper OO programming,
 ;;; namely using eieio.el. However, it was skipped for a more familiar
 ;;; list-based approach which allows for sufficient abstractions.
+;;;
+;;; Also, while it may not seem wise, an attempt is made to steer clear of
+;;; any cl.el features, raising the need to implement a few basic utilities.
+;;; This is not a sign of disdain for Common Lisp, rather than a choice to
+;;; explore the natural capabilities of Emacs Lisp.
 
 (require 'seq)
 
@@ -132,7 +137,7 @@
   (setq *rogue-player-current-hp* *rogue-player-max-hp*)
   (setq *rogue-player-armor* nil)
   (setq *rogue-player-inventory* nil)
-  (setq *rogue-player-weapon* 'SWORD)
+  (setq *rogue-player-weapon* (rogue/weapon/make 'SWORD))
   (setq *rogue-player-spell* 'HEAL)
   (setq *rogue-current-monster* nil)
   (setq *rogue-fight-log* nil)
@@ -486,16 +491,16 @@ Returns the corresponding door if one exists, nil otherwise."
     (if *rogue-current-monster*
         (if (rogue/monster/alive-p *rogue-current-monster*)
             (progn
-              (let ((dmg (rogue/fight/weapon-dmg *rogue-player-weapon*))
-                    (type (rogue/monster/type *rogue-current-monster*)))
+              (let ((dmg (rogue/weapon/dmg *rogue-player-weapon*))
+                    (mtype (rogue/monster/type *rogue-current-monster*)))
                 (rogue/monster/reduce-hp *rogue-current-monster* dmg)
                 (push (format "You hit %s with %s for %d damage."
-                              type
-                              *rogue-player-weapon*
+                              mtype
+                              (rogue/weapon/type *rogue-player-weapon*)
                               dmg)
                       *rogue-fight-log*)
                 (when (not (rogue/monster/alive-p *rogue-current-monster*))
-                  (push (format "You killed %s." type)
+                  (push (format "You killed %s." mtype)
                         *rogue-fight-log*)))
               (rogue/draw/fight)
               (rogue/fight/attack-done))
@@ -529,20 +534,14 @@ Returns the corresponding door if one exists, nil otherwise."
             (kill-buffer +rogue-buffer-name+)))
       (rogue/draw/fight))))
 
-(defun rogue/fight/weapon-dmg (weapon)
-  "The damage dealt by WEAPON."
-  (cond ((null weapon) 1)
-        ((eq weapon 'SWORD) 4)
-        (t (error "Unknown weapon: %s" weapon))))
-
 ;;; Levels ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun rogue/levels/make-all (num-levels)
   "Create NUM-LEVELS levels and connect them."
-  (let ((raw-levels (mapcar #'rogue/levels/make-one
+  (let ((levels (mapcar #'rogue/levels/make-one
                             (rogue/util/range 1 num-levels))))
     ;; TODO
-    raw-levels))
+    levels))
 
 (defun rogue/levels/make-one (level-number)
   "Create and populate level LEVEL-NUMBER."
@@ -575,6 +574,17 @@ Returns the corresponding door if one exists, nil otherwise."
 (defun rogue/level/room (level room-number)
   "Get the room with number ROOM-NUMBER from LEVEL."
   (assoc room-number (rogue/level/all-rooms level)))
+
+(defun rogue/level/first-room (level)
+  "The first room of LEVEL."
+  (let ((room-number (+ 1 (* 100 (rogue/level/number level)))))
+    (rogue/level/room level room-number)))
+
+(defun rogue/level/last-room (level)
+  "The last room of LEVEL."
+  (let ((room-number (+ +rogue-rooms-per-level+
+                        (* 100 (rogue/level/number level)))))
+    (rogue/level/room level room-number)))
 
 ;;; Rooms ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -717,7 +727,7 @@ At most one door is placed on each of the four walls."
           (push m monsters-after-move))))))
 
 (defun rogue/monsters/make (type)
-  "Make a new monster of type TYPE.
+  "Create a new monster of type TYPE.
 
 A monster is represented by a structure as follows:
 '(TYPE SYMBOL (CURRENT-HP . MAX-HP) DAMAGE POSITION)."
@@ -773,6 +783,33 @@ A monster is represented by a structure as follows:
   (let ((current-hp (rogue/monster/hp monster)))
     (setcar (nth 2 monster)
             (- current-hp damage))))
+
+;;; Items ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun rogue/weapon/make (type)
+  "Create a weapon of type TYPE."
+  (cond ((null type)
+         (list 'FIST 1 1))
+        ((eq type 'SWORD)
+         (list type 2 4))
+        (t (error "Unknown weapon type '%s'" type))))
+
+(defun rogue/weapon/type (weapon)
+  "The type of WEAPON."
+  (car weapon))
+
+(defun rogue/weapon/dmg (weapon)
+  "The damage for the next attack with WEAPON."
+  (+ (rogue/weapon/min-dmg weapon)
+     (random (+ 1 (rogue/weapon/max-dmg weapon)))))
+
+(defun rogue/weapon/min-dmg (weapon)
+  "The minimal damage of WEAPON."
+  (cadr weapon))
+
+(defun rogue/weapon/max-dmg (weapon)
+  "The maximal damage of WEAPON."
+  (caddr weapon))
 
 ;;; Positioning ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
