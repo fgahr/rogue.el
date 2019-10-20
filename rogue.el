@@ -524,9 +524,6 @@ Returns the corresponding door if one exists, nil otherwise."
     (if *rogue-current-monster*
         (if *rogue-player-spell*
             (progn
-              (push (format "You cast %s"
-                            (rogue/spell/name *rogue-player-spell*))
-                    *rogue-fight-log*)
               (rogue/spell/cast-in-combat *rogue-player-spell*)
               (rogue/draw/fight)
               (rogue/fight/move-done))
@@ -808,7 +805,7 @@ A monster is represented by a structure as follows:
     (setq *rogue-player-current-hp*
           (min *rogue-player-max-hp*
                (+ *rogue-player-current-hp* amount)))
-    (message (format "You have been healed for %d points" amount))))
+    (format "You regain %d hitpoints" amount)))
 
 (defun rogue/function/not-in-combat ()
   "Function for an action unavailable in a fight."
@@ -818,13 +815,19 @@ A monster is represented by a structure as follows:
   "Function for an action only available in a fight."
   (message "Only available in a fight."))
 
-(defun rogue/function/afflict-damage (amount)
+(defun rogue/function/damage-dealer (amount)
   "Afflict AMOUNT damage to the current monster, if any."
-  (unless *rogue-current-monster*
-    (message "No monster present to deal damage to."))
-  (rogue/monster/reduce-hp *rogue-current-monster* amount))
+  (lambda ()
+    (unless *rogue-current-monster*
+      (message "No monster present to deal damage to."))
+    (rogue/monster/reduce-hp *rogue-current-monster* amount)
+    (format "You deal %d damage" amount)))
 
 ;;; Items ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun rogue/weapon/make (name min-dmg max-dmg)
+  "Create a weapon with a NAME as well as MIN-DMG and MAX-DMG values."
+  (list name min-dmg max-dmg))
 
 (defvar +rogue-all-weapons+
   (list
@@ -843,10 +846,6 @@ A monster is represented by a structure as follows:
            (assoc type +rogue-all-weapons+))))
     (or weapon
         (error "Unknown weapon type '%s'" type))))
-
-(defun rogue/weapon/make (name min-dmg max-dmg)
-  "Create a weapon with a NAME as well as MIN-DMG and MAX-DMG values."
-  (list name min-dmg max-dmg))
 
 (defun rogue/weapon/type (weapon)
   "The type of WEAPON."
@@ -869,6 +868,13 @@ A monster is represented by a structure as follows:
 
 ;;; Spells ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defun rogue/spell/make (name in-dungeon in-combat)
+  "Create spell NAME with actions to take when IN-DUNGEON or IN-COMBAT.
+
+The latter two arguments need to be callable functions without arguments. They
+must return a description of the spell's effects."
+  (list name in-dungeon in-combat))
+
 (defvar +rogue-all-spells+
   (list
    ;; TODO: Make useful list of spells
@@ -877,7 +883,7 @@ A monster is represented by a structure as follows:
                      (rogue/function/healer 3))
    (rogue/spell/make 'LIGHTNING
                      #'rogue/function/only-in-combat
-                     (rogue/function/afflict-damage 4))))
+                     (rogue/function/damage-dealer 4))))
 
 (make-variable-buffer-local '+rogue-all-spells+)
 
@@ -887,23 +893,20 @@ A monster is represented by a structure as follows:
     (or spell
         (error "Unknown spell '%s'" name))))
 
-(defun rogue/spell/make (name in-dungeon in-combat)
-  "Create spell NAME with actions to take when IN-DUNGEON or IN-COMBAT.
-
-The latter two arguments need to be callable functions without arguments."
-  (list name in-dungeon in-combat))
-
 (defun rogue/spell/name (spell)
   "The name of SPELL."
   (car spell))
 
 (defun rogue/spell/cast-in-dungeon (spell)
   "Cast SPELL while exploring the dungeon."
-  (funcall (cadr spell)))
+  (message (funcall (cadr spell))))
 
 (defun rogue/spell/cast-in-combat (spell)
   "Cast SPELL while in a fight."
-  (funcall (caddr spell)))
+  (push (format "You cast %s -- %s"
+                (rogue/spell/name spell)
+                (funcall (caddr spell)))
+        *rogue-fight-log*))
 
 ;;; Positioning ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
