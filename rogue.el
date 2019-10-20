@@ -112,6 +112,7 @@
     (define-key map [up] #'rogue/player/move-up)
     (define-key map [down] #'rogue/player/move-down)
     (define-key map "i" #'rogue/player/access-inventory)
+    (define-key map "s" #'rogue/player/cast-spell)
     (define-key map "q" #'rogue/quit)
     map))
 
@@ -298,6 +299,15 @@ If HAS-DOOR is non-nil, add a door in its center."
   "Access the player's inventory."
   (interactive)
   (error "Not yet implemented: Inventory"))
+
+(defun rogue/player/cast-spell ()
+  "Cast the currently active spell."
+  (interactive)
+  (if *rogue-player-spell*
+      (progn
+        (rogue/spell/cast-in-dungeon *rogue-player-spell*)
+        (rogue/draw/dungeon))
+    (error "No spell selected.")))
 
 (defun rogue/player/enter-door ()
   "Enter a door."
