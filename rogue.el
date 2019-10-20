@@ -53,6 +53,8 @@
 (defvar *rogue-player-current-hp* 0
   "The player's current hitpoints.")
 
+(defvar *rogue-message* nil
+  "The latest message for the player.")
 (defvar *rogue-player-position* nil
   "The position of the player within the current room.")
 (defvar *rogue-player-armor* nil
@@ -64,6 +66,7 @@
 (defvar *rogue-player-spell* nil
   "The currently active spell.")
 
+(make-variable-buffer-local '*rogue-message*)
 (make-variable-buffer-local '*rogue-player-max-hp*)
 (make-variable-buffer-local '*rogue-player-position*)
 (make-variable-buffer-local '*rogue-player-armor*)
@@ -135,6 +138,7 @@
   (setq *rogue-current-room* (rogue/level/room *rogue-current-level* 101))
   (setq *rogue-player-position* (rogue/room/center *rogue-current-room*))
   (setq *rogue-player-max-hp* 10)
+  (setq *rogue-message* "")
   (setq *rogue-player-current-hp* *rogue-player-max-hp*)
   (setq *rogue-player-armor* nil)
   (setq *rogue-player-inventory* nil)
@@ -155,7 +159,9 @@
   (rogue/monsters/move)
   (if (rogue/player/monster-collision-p)
       (rogue/fight/start)
-    (rogue/draw/dungeon)))
+    (progn
+      (rogue/message/set "")
+      (rogue/draw/dungeon))))
 
 ;;; Graphics ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -175,6 +181,9 @@
       (newline))
     (dotimes (n (rogue/dim/y dims))
       (rogue/draw/dungeon-row n dims monsters door-places)))
+  (newline)
+  (insert *rogue-message*)
+  (newline)
   (setq-local buffer-read-only t))
 
 (defun rogue/draw/fight ()
@@ -470,8 +479,8 @@ Returns the corresponding door if one exists, nil otherwise."
         ((rogue/monster/alive-p *rogue-current-monster*)
          (error "Cannot leave an ongoing fight"))
         (t
-         (message "You defeated %s"
-                  (rogue/monster/type *rogue-current-monster*))
+         (rogue/message/set "You defeated %s"
+                            (rogue/monster/type *rogue-current-monster*))
          (setq *rogue-current-monster* nil)
          (setq *rogue-fight-log* nil)
          (use-local-map rogue/dungeon-keymap)
@@ -799,6 +808,10 @@ A monster is represented by a structure as follows:
 
 ;;; Game-Specific Utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defun rogue/message/set (string &rest args)
+  "Set the current message for the player based on the format STRING and ARGS."
+  (setq *rogue-message* (apply #'format string args)))
+
 (defun rogue/function/healer (amount)
   "Create a function that heals the player for AMOUNT when executed."
   (lambda ()
@@ -899,7 +912,7 @@ must return a description of the spell's effects."
 
 (defun rogue/spell/cast-in-dungeon (spell)
   "Cast SPELL while exploring the dungeon."
-  (message (funcall (cadr spell))))
+  (rogue/message/set "%s" (funcall (cadr spell))))
 
 (defun rogue/spell/cast-in-combat (spell)
   "Cast SPELL while in a fight."
