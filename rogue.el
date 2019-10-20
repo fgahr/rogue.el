@@ -71,6 +71,11 @@
 (make-variable-buffer-local '*rogue-player-weapon*)
 (make-variable-buffer-local '*rogue-player-spell*)
 
+;; Spells
+
+(defvar *rogue/spell/heal* nil
+  "A healing spell")
+
 ;; Level related
 
 (defconst +rogue-rooms-per-level+ 25
@@ -138,9 +143,10 @@
   (setq *rogue-player-armor* nil)
   (setq *rogue-player-inventory* nil)
   (setq *rogue-player-weapon* (rogue/weapon/make 'SWORD))
-  (setq *rogue-player-spell* 'HEAL)
+  (setq *rogue-player-spell* *rogue/spell/heal*)
   (setq *rogue-current-monster* nil)
   (setq *rogue-fight-log* nil)
+  (rogue/spells/init)
   (rogue/draw/dungeon))
 
 (defun rogue/quit ()
@@ -472,7 +478,7 @@ Returns the corresponding door if one exists, nil otherwise."
   (interactive)
   (message "Cannot move -- Fighting"))
 
-(defun rogue/fight/attack-done ()
+(defun rogue/fight/move-done ()
   "Evaluations after attacking a monster."
   (if (rogue/monster/alive-p *rogue-current-monster*)
      (rogue/fight/monster-attack)
@@ -503,7 +509,7 @@ Returns the corresponding door if one exists, nil otherwise."
                   (push (format "You killed %s." mtype)
                         *rogue-fight-log*)))
               (rogue/draw/fight)
-              (rogue/fight/attack-done))
+              (rogue/fight/move-done))
           (message "The monster is already dead"))
       (error "Not in a fight"))))
 
@@ -512,9 +518,15 @@ Returns the corresponding door if one exists, nil otherwise."
   (interactive)
   (when (rogue/player/alive-p)
     (if *rogue-current-monster*
-        (if (rogue/monster/alive-p *rogue-current-monster*)
-            (message "Not yet implemented: SPELL-ATTACK")
-          (message "The monster is already dead"))
+        (if *rogue-player-spell*
+            (progn
+              (push (format "You cast %s"
+                            (rogue/spell/name *rogue-player-spell*))
+                    *rogue-fight-log*)
+              (rogue/spell/cast-in-combat *rogue-player-spell*)
+              (rogue/draw/fight)
+              (rogue/fight/move-done))
+          (message "No spell selected"))
       (error "Not in a fight"))))
 
 (defun rogue/fight/monster-attack ()
@@ -602,11 +614,11 @@ Possible sizes are delimited by +ROGUE-MIN-SIDE-LENGTH+ and
   (cond ((= level 1)
          (seq-random-elt '((OGRE)
                            (SKELETON SKELETON)
-                           (GOAT GOAT SKELETON)
-                           )))
+                           (GOAT GOAT SKELETON))))
         ((= level 2)
          (seq-random-elt '((OGRE SKELETON) (CENTAUR))))
         ((= level 3)
+         ;; Pick any two
          (let ((available '(CENTAUR MEDUSA DRAGON)))
            (list (seq-random-elt available)
                  (seq-random-elt available))))
@@ -784,6 +796,30 @@ A monster is represented by a structure as follows:
     (setcar (nth 2 monster)
             (- current-hp damage))))
 
+;;; Game-Specific Utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun rogue/function/healer (amount)
+  "Create a function that heals the player for AMOUNT when executed."
+  (lambda ()
+    (setq *rogue-player-current-hp*
+          (min *rogue-player-max-hp*
+               (+ *rogue-player-current-hp* amount)))
+    (message (format "You have been healed for %d points" amount))))
+
+(defun rogue/function/not-in-combat ()
+  "Function for an action unavailable in a fight."
+  (message "Not available when in combat."))
+
+(defun rogue/function/only-in-combat ()
+  "Function for an action only available in a fight."
+  (message "Only available in a fight."))
+
+(defun rogue/function/afflict-damage (amount)
+  "Afflict AMOUNT damage to the current monster, if any."
+  (unless *rogue-current-monster*
+    (message "No monster present to deal damage to."))
+  (rogue/monster/reduce-hp *rogue-current-monster* amount))
+
 ;;; Items ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun rogue/weapon/make (type)
@@ -810,6 +846,30 @@ A monster is represented by a structure as follows:
 (defun rogue/weapon/max-dmg (weapon)
   "The maximal damage of WEAPON."
   (caddr weapon))
+
+;;; Spells ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun rogue/spell/make (name in-dungeon in-combat)
+  "Create spell NAME with actions to take when IN-DUNGEON or IN-COMBAT.
+
+The latter two arguments need to be callable functions without arguments."
+  (list name in-dungeon in-combat))
+
+(defun rogue/spell/name (spell)
+  "The name of SPELL."
+  (car spell))
+
+(defun rogue/spell/cast-in-dungeon (spell)
+  "Cast SPELL while exploring the dungeon."
+  (funcall (cadr spell)))
+
+(defun rogue/spell/cast-in-combat (spell)
+  "Cast SPELL while in a fight."
+  (funcall (caddr spell)))
+
+(defun rogue/spells/init ()
+  (let ((heal-3 (rogue/function/healer 3)))
+    (setq *rogue/spell/heal* (rogue/spell/make 'HEAL heal-3 heal-3))))
 
 ;;; Positioning ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -880,7 +940,7 @@ A monster is represented by a structure as follows:
              (/ (rogue/dim/y dim)
                 2)))
 
-;;; Utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; General Utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun rogue/util/shuffle-list (sequence)
   "A list with the same elements as SEQUENCE but in randomized order."
