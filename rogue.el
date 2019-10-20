@@ -71,11 +71,6 @@
 (make-variable-buffer-local '*rogue-player-weapon*)
 (make-variable-buffer-local '*rogue-player-spell*)
 
-;; Spells
-
-(defvar *rogue/spell/heal* nil
-  "A healing spell")
-
 ;; Level related
 
 (defconst +rogue-rooms-per-level+ 25
@@ -143,11 +138,10 @@
   (setq *rogue-player-current-hp* *rogue-player-max-hp*)
   (setq *rogue-player-armor* nil)
   (setq *rogue-player-inventory* nil)
-  (setq *rogue-player-weapon* (rogue/weapon/make 'SWORD))
-  (setq *rogue-player-spell* *rogue/spell/heal*)
+  (setq *rogue-player-weapon* (rogue/weapon/get 'SWORD))
+  (setq *rogue-player-spell* (rogue/spell/get 'HEAL))
   (setq *rogue-current-monster* nil)
   (setq *rogue-fight-log* nil)
-  (rogue/spells/init)
   (rogue/draw/dungeon))
 
 (defun rogue/quit ()
@@ -832,13 +826,27 @@ A monster is represented by a structure as follows:
 
 ;;; Items ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun rogue/weapon/make (type)
-  "Create a weapon of type TYPE."
-  (cond ((null type)
-         (list 'FIST 1 1))
-        ((eq type 'SWORD)
-         (list type 2 4))
-        (t (error "Unknown weapon type '%s'" type))))
+(defvar +rogue-all-weapons+
+  (list
+   ;; TODO: Make useful list of weapons.
+   (rogue/weapon/make 'SWORD 2 4)
+   (rogue/weapon/make 'CLUB 3 3)
+   (rogue/weapon/make 'SPOON 1 2)))
+
+(make-variable-buffer-local '+rogue-all-weapons+)
+
+(defun rogue/weapon/get (type)
+  "Get the weapon with the right TYPE."
+  (let ((weapon
+         (if (null type)
+             (rogue/weapon/make 'FIST 1 1)
+           (assoc type +rogue-all-weapons+))))
+    (or weapon
+        (error "Unknown weapon type '%s'" type))))
+
+(defun rogue/weapon/make (name min-dmg max-dmg)
+  "Create a weapon with a NAME as well as MIN-DMG and MAX-DMG values."
+  (list name min-dmg max-dmg))
 
 (defun rogue/weapon/type (weapon)
   "The type of WEAPON."
@@ -846,8 +854,10 @@ A monster is represented by a structure as follows:
 
 (defun rogue/weapon/dmg (weapon)
   "The damage for the next attack with WEAPON."
-  (+ (rogue/weapon/min-dmg weapon)
-     (random (+ 1 (rogue/weapon/max-dmg weapon)))))
+  (let ((min-dmg (rogue/weapon/min-dmg weapon))
+        (max-dmg (rogue/weapon/max-dmg weapon)))
+    (+ min-dmg
+       (random (+ 1 (- max-dmg min-dmg))))))
 
 (defun rogue/weapon/min-dmg (weapon)
   "The minimal damage of WEAPON."
@@ -858,6 +868,24 @@ A monster is represented by a structure as follows:
   (caddr weapon))
 
 ;;; Spells ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defvar +rogue-all-spells+
+  (list
+   ;; TODO: Make useful list of spells
+   (rogue/spell/make 'HEAL
+                     (rogue/function/healer 3)
+                     (rogue/function/healer 3))
+   (rogue/spell/make 'LIGHTNING
+                     #'rogue/function/only-in-combat
+                     (rogue/function/afflict-damage 4))))
+
+(make-variable-buffer-local '+rogue-all-spells+)
+
+(defun rogue/spell/get (name)
+  "Get the spell with the right NAME."
+  (let ((spell (assoc name +rogue-all-spells+)))
+    (or spell
+        (error "Unknown spell '%s'" name))))
 
 (defun rogue/spell/make (name in-dungeon in-combat)
   "Create spell NAME with actions to take when IN-DUNGEON or IN-COMBAT.
@@ -876,10 +904,6 @@ The latter two arguments need to be callable functions without arguments."
 (defun rogue/spell/cast-in-combat (spell)
   "Cast SPELL while in a fight."
   (funcall (caddr spell)))
-
-(defun rogue/spells/init ()
-  (let ((heal-3 (rogue/function/healer 3)))
-    (setq *rogue/spell/heal* (rogue/spell/make 'HEAL heal-3 heal-3))))
 
 ;;; Positioning ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -1007,3 +1031,4 @@ The latter two arguments need to be callable functions without arguments."
         (t 0)))
 
 ;;; rogue.el ends here
+(autoload 'name "srefactor-ui")
