@@ -140,9 +140,10 @@
   (setq *rogue-player-max-hp* 10)
   (setq *rogue-message* "")
   (setq *rogue-player-current-hp* *rogue-player-max-hp*)
-  (setq *rogue-player-armor* nil)
-  (setq *rogue-player-inventory* nil)
   (setq *rogue-player-weapon* (rogue/weapon/get 'SWORD))
+  (setq *rogue-player-armor* (list (rogue/armor/get 'SHIELD)))
+  (setq *rogue-player-inventory*
+        (cons *rogue-player-weapon* *rogue-player-armor*))
   (setq *rogue-player-spell* (rogue/spell/get 'HEAL))
   (setq *rogue-current-monster* nil)
   (setq *rogue-fight-log* nil)
@@ -549,6 +550,8 @@ using ARGS."
 (defun rogue/fight/monster-attack ()
   "The current monster attacks the player."
   (let ((dmg (rogue/monster/damage *rogue-current-monster*)))
+    (dolist (armor *rogue-player-armor*)
+      (setq dmg (rogue/armor/take-damage armor dmg)))
     (rogue/player/reduce-hp dmg)
     (rogue/fight/add-to-log "%s hit you for %d damage."
                             (rogue/monster/type *rogue-current-monster*)
@@ -846,10 +849,6 @@ A monster is represented by a structure as follows:
     (rogue/monster/reduce-hp *rogue-current-monster* amount)
     (format "You deal %d damage" amount)))
 
-(defun rogue/function/damage-reducer (amount)
-  "Reduce incoming damage by AMOUNT."
-  (lambda (damage) (max 0 (- damage amount))))
-
 ;;; Items ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun rogue/item/make (type name &rest specifics)
@@ -931,9 +930,13 @@ The ON-ATTACKED function takes an initial damage and returns the possibly
 reduced resulting damage. Other actions can be executed as well."
   (rogue/item/make 'ARMOR name on-attacked))
 
+(defun rogue/armor/damage-reducer (amount)
+  "Reduce incoming damage by AMOUNT."
+  (lambda (damage) (max 0 (- damage amount))))
+
 (defvar +rogue-all-armor+
   (list
-   (rogue/armor/make 'SHIELD (rogue/function/damage-reducer 1))
+   (rogue/armor/make 'SHIELD (rogue/armor/damage-reducer 1))
    (rogue/armor/make
     'BLADE-MAIL
     (lambda (damage)
