@@ -1,20 +1,20 @@
 ;;; rogue.el --- Simple roguelike within Emacs. -*- lexical-binding: t; -*-
 
 ;;; Commentary:
-;;; Not participating in 7drl, but it inspired me to create something, anyway.
+;; Not participating in 7drl, but it inspired me to create something, anyway.
 
 ;;; License: GNU GPLv3
 
 ;;; Code:
 
-;;; Some parts of the code could conceivably benefit from proper OO programming,
-;;; namely using eieio.el. However, it was skipped for a more familiar
-;;; list-based approach which allows for sufficient abstractions.
-;;;
-;;; Also, while it may not seem wise, an attempt is made to steer clear of
-;;; any cl.el features, raising the need to implement a few basic utilities.
-;;; This is not a sign of disdain for Common Lisp, rather than a choice to
-;;; explore the natural capabilities of Emacs Lisp.
+;; Some parts of the code could conceivably benefit from proper OO programming,
+;; namely using eieio.el. However, it was skipped for a more familiar
+;; list-based approach which allows for sufficient abstractions.
+;;
+;; Also, while it may not seem wise, an attempt is made to steer clear of
+;; any cl.el features, raising the need to implement a few basic utilities.
+;; This is not a sign of disdain for Common Lisp, rather than a choice to
+;; explore the natural capabilities of Emacs Lisp.
 
 (require 'seq)
 
@@ -491,7 +491,7 @@ Returns the corresponding door if one exists, nil otherwise."
 using ARGS."
   (unless *rogue-current-monster*
     (error "Not in a fight but attempting to extend fight log."))
-  (push (apply #'format str args) *rogue-fight-log*))
+  (push (apply #'format string args) *rogue-fight-log*))
 
 (defun rogue/fight/cannot-move ()
   "Signal the player that moving is disabled during a fight."
@@ -886,6 +886,8 @@ them is the responsibility of more specialized functions."
    (rogue/weapon/make 'CLUB 3 3)
    (rogue/weapon/make 'SPOON 1 2)))
 
+(make-variable-buffer-local '+rogue-all-weapons+)
+
 (defun rogue/weapon/get (name)
   "Get the weapon with the right NAME."
   (let ((weapon
@@ -895,7 +897,9 @@ them is the responsibility of more specialized functions."
                        (eq name (rogue/item/name wpn)))
                      +rogue-all-weapons+))))
     (or weapon
-        (error "Unknown weapon name '%s'" name))))
+        (error "Unknown weapon name '%s'. Available: %S"
+               name
+               +rogue-all-weapons+))))
 
 (defun rogue/weapon/dmg (weapon)
   "The damage for the next attack with WEAPON."
@@ -940,7 +944,6 @@ reduced resulting damage. Other actions can be executed as well."
                                 returned))
       (- damage 2)))))
 
-(make-variable-buffer-local '+rogue-all-weapons+)
 (make-variable-buffer-local '+rogue-all-armor+)
 
 (defun rogue/armor/get (name)
@@ -950,10 +953,12 @@ reduced resulting damage. Other actions can be executed as well."
                      (eq name (rogue/item/name arm)))
                    +rogue-all-armor+)))
     (or armor
-        (error "Unknown weapon name '%s'" name))))
+        (error "Unknown armor name '%s'" name))))
 
 (defun rogue/armor/take-damage (armor damage)
   "Make use of ARMOR item when DAMAGE is taken."
+  (unless (eq (rogue/item/type armor) 'ARMOR)
+    (error "Item is not a weapon: %S" armor))
   (funcall (car (rogue/item/specifics armor)) damage))
 
 ;;; Spells ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
