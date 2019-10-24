@@ -524,7 +524,7 @@ using ARGS."
                 (rogue/fight/add-to-log
                  "You hit %s with %s for %d damage."
                  mtype
-                 (rogue/weapon/name *rogue-player-weapon*)
+                 (rogue/item/name *rogue-player-weapon*)
                  dmg)
                 (when (not (rogue/monster/alive-p *rogue-current-monster*))
                   (rogue/fight/add-to-log "You killed %s." mtype)))
@@ -846,16 +846,20 @@ A monster is represented by a structure as follows:
     (rogue/monster/reduce-hp *rogue-current-monster* amount)
     (format "You deal %d damage" amount)))
 
+(defun rogue/function/damage-reducer (amount)
+  "Reduce incoming damage by AMOUNT."
+  (lambda (damage) (max 0 (- damage amount))))
+
 ;;; Items ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun rogue/item/make (type name &rest args)
+(defun rogue/item/make (type name &rest specifics)
   "Create an item with the given TYPE and NAME.
 
 TYPE can be one of the symbols WEAPON, ARMOR, and CONSUMABLE.
 
-The remaining args vary based on the chosen type. Checking and handling them
-is the responsibility of more specialized functions."
-  (apply #'list type name args))
+The remaining SPECIFICS vary based on the chosen type. Checking and handling
+them is the responsibility of more specialized functions."
+  (apply #'list type name specifics))
 
 (defun rogue/item/type (item)
   "The type of ITEM."
@@ -869,16 +873,11 @@ is the responsibility of more specialized functions."
   "The specific (type-dependent) properties of ITEM."
   (cddr item))
 
+;;; Weapons ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defun rogue/weapon/make (name min-dmg max-dmg)
   "Create a weapon with a NAME as well as MIN-DMG and MAX-DMG values."
-  (rogue/item/make name 'WEAPON min-dmg max-dmg))
-
-(defun rogue/armor/make (name on-attacked)
-  "Create a piece of armor with the given NAME and an ON-ATTACKED function.
-
-The ON-ATTACKED function takes an initial damage and returns the possibly
-reduced resulting damage. Other actions can be executed as well."
-  (rogue/item/make name 'ARMOR on-attacked))
+  (rogue/item/make 'WEAPON name min-dmg max-dmg))
 
 (defvar +rogue-all-weapons+
   (list
@@ -887,25 +886,21 @@ reduced resulting damage. Other actions can be executed as well."
    (rogue/weapon/make 'CLUB 3 3)
    (rogue/weapon/make 'SPOON 1 2)))
 
-(make-variable-buffer-local '+rogue-all-weapons+)
-
 (defun rogue/weapon/get (name)
   "Get the weapon with the right NAME."
   (let ((weapon
          (if (null name)
              (rogue/weapon/make 'FIST 1 1)
-           (seq-find (lambda (weapon)
-                       (eq name (rogue/item/name weapon)))
+           (seq-find (lambda (wpn)
+                       (eq name (rogue/item/name wpn)))
                      +rogue-all-weapons+))))
     (or weapon
-        (error "Unknown weapon type '%s'" type))))
-
-(defun rogue/weapon/name (weapon)
-  "The name of WEAPON."
-  (rogue/item/name weapon))
+        (error "Unknown weapon name '%s'" name))))
 
 (defun rogue/weapon/dmg (weapon)
   "The damage for the next attack with WEAPON."
+  (unless (eq (rogue/item/type weapon) 'WEAPON)
+    (error "Item is not a weapon: %S" weapon))
   (let ((min-dmg (rogue/weapon/min-dmg weapon))
         (max-dmg (rogue/weapon/max-dmg weapon)))
     (+ min-dmg
@@ -913,11 +908,53 @@ reduced resulting damage. Other actions can be executed as well."
 
 (defun rogue/weapon/min-dmg (weapon)
   "The minimal damage of WEAPON."
+  (unless (eq (rogue/item/type weapon) 'WEAPON)
+    (error "Item is not a weapon: %S" weapon))
   (car (rogue/item/specifics weapon)))
 
 (defun rogue/weapon/max-dmg (weapon)
   "The maximal damage of WEAPON."
+  (unless (eq (rogue/item/type weapon) 'WEAPON)
+    (error "Item is not a weapon: %S" weapon))
   (cadr (rogue/item/specifics weapon)))
+
+;;; Armor ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun rogue/armor/make (name on-attacked)
+  "Create a piece of armor with the given NAME and an ON-ATTACKED function.
+
+The ON-ATTACKED function takes an initial damage and returns the possibly
+reduced resulting damage. Other actions can be executed as well."
+  (rogue/item/make 'ARMOR name on-attacked))
+
+(defvar +rogue-all-armor+
+  (list
+   (rogue/armor/make 'SHIELD (rogue/function/damage-reducer 1))
+   (rogue/armor/make
+    'BLADE-MAIL
+    (lambda (damage)
+      (let ((returned 1))
+        (rogue/monster/reduce-hp *rogue-current-monster* returned)
+        (rogue/fight/add-to-log "%s takes %d damage"
+                                (rogue/monster/type *rogue-current-monster*)
+                                returned))
+      (- damage 2)))))
+
+(make-variable-buffer-local '+rogue-all-weapons+)
+(make-variable-buffer-local '+rogue-all-armor+)
+
+(defun rogue/armor/get (name)
+  "Get the armor item with the right NAME."
+  (let ((armor
+         (seq-find (lambda (arm)
+                     (eq name (rogue/item/name arm)))
+                   +rogue-all-armor+)))
+    (or armor
+        (error "Unknown weapon name '%s'" name))))
+
+(defun rogue/armor/take-damage (armor damage)
+  "Make use of ARMOR item when DAMAGE is taken."
+  (funcall (car (rogue/item/specifics armor)) damage))
 
 ;;; Spells ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -980,7 +1017,7 @@ must return a description of the spell's effects."
              (+ (rogue/pos/y pos-a) (rogue/pos/y pos-b))))
 
 (defun rogue/pos/within-one (pos-a pos-b)
-  "Whether two positions are in immediate vertical or horizontal proximity"
+  "Whether positions POS-A and POS-B are in immediate proximity."
   (let ((x-diff (rogue/util/abs (- (rogue/pos/x pos-a) (rogue/pos/x pos-b))))
         (y-diff (rogue/util/abs (- (rogue/pos/y pos-a) (rogue/pos/y pos-b)))))
     (or (and (= x-diff 0) (<= y-diff 1))
