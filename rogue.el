@@ -524,7 +524,7 @@ using ARGS."
                 (rogue/fight/add-to-log
                  "You hit %s with %s for %d damage."
                  mtype
-                 (rogue/weapon/type *rogue-player-weapon*)
+                 (rogue/weapon/name *rogue-player-weapon*)
                  dmg)
                 (when (not (rogue/monster/alive-p *rogue-current-monster*))
                   (rogue/fight/add-to-log "You killed %s." mtype)))
@@ -832,17 +832,11 @@ A monster is represented by a structure as follows:
 
 (defun rogue/function/not-in-combat ()
   "Function for an action unavailable in a fight."
-  (message "Not available when in combat."))
+  (rogue/notify "Not available when in combat."))
 
 (defun rogue/function/only-in-combat ()
   "Function for an action only available in a fight."
-  (message "Only available in a fight."))
-
-(defun rogue/function/no-effect (item combat)
-  "Function for an action of ITEM having no effect. If COMBAT is non-nil, print
-the message to the fight log, else to the player notification area."
-  (if combat
-      (lambda () ())))
+  (rogue/message/set "Only available in a fight."))
 
 (defun rogue/function/damage-dealer (amount)
   "Afflict AMOUNT damage to the current monster, if any."
@@ -854,23 +848,37 @@ the message to the fight log, else to the player notification area."
 
 ;;; Items ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defun rogue/item/make (type name &rest args)
+  "Create an item with the given TYPE and NAME.
+
+TYPE can be one of the symbols WEAPON, ARMOR, and CONSUMABLE.
+
+The remaining args vary based on the chosen type. Checking and handling them
+is the responsibility of more specialized functions."
+  (apply #'list type name args))
+
+(defun rogue/item/type (item)
+  "The type of ITEM."
+  (car item))
+
+(defun rogue/item/name (item)
+  "The name of ITEM."
+  (cadr item))
+
+(defun rogue/item/specifics (item)
+  "The specific (type-dependent) properties of ITEM."
+  (cddr item))
+
 (defun rogue/weapon/make (name min-dmg max-dmg)
   "Create a weapon with a NAME as well as MIN-DMG and MAX-DMG values."
-  (list name min-dmg max-dmg))
-
-(defun rogue/item/make (name can-equip in-dungeon in-fight on-attacked)
-  "Create an item with NAME and actions to execute. When CAN-EQUIP is
-non-nil, the item can be used as armor.
-
-All actions need to return the item, or nil if the item is consumed.
-IN-DUNGEON: Function to call when item is used in dungeon view.
-IN-FIGHT: Function to call when item is used in a fight.
-ON-ATTACKED: Function to call when player is attacked. Takes the attack
-damage as argument and returns the resulting attack damage."
-  (list name can-equip in-dungeon in-fight on-attacked))
+  (rogue/item/make name 'WEAPON min-dmg max-dmg))
 
 (defun rogue/armor/make (name on-attacked)
-  )
+  "Create a piece of armor with the given NAME and an ON-ATTACKED function.
+
+The ON-ATTACKED function takes an initial damage and returns the possibly
+reduced resulting damage. Other actions can be executed as well."
+  (rogue/item/make name 'ARMOR on-attacked))
 
 (defvar +rogue-all-weapons+
   (list
@@ -881,18 +889,20 @@ damage as argument and returns the resulting attack damage."
 
 (make-variable-buffer-local '+rogue-all-weapons+)
 
-(defun rogue/weapon/get (type)
-  "Get the weapon with the right TYPE."
+(defun rogue/weapon/get (name)
+  "Get the weapon with the right NAME."
   (let ((weapon
-         (if (null type)
+         (if (null name)
              (rogue/weapon/make 'FIST 1 1)
-           (assoc type +rogue-all-weapons+))))
+           (seq-find (lambda (weapon)
+                       (eq name (rogue/item/name weapon)))
+                     +rogue-all-weapons+))))
     (or weapon
         (error "Unknown weapon type '%s'" type))))
 
-(defun rogue/weapon/type (weapon)
-  "The type of WEAPON."
-  (car weapon))
+(defun rogue/weapon/name (weapon)
+  "The name of WEAPON."
+  (rogue/item/name weapon))
 
 (defun rogue/weapon/dmg (weapon)
   "The damage for the next attack with WEAPON."
@@ -903,11 +913,11 @@ damage as argument and returns the resulting attack damage."
 
 (defun rogue/weapon/min-dmg (weapon)
   "The minimal damage of WEAPON."
-  (cadr weapon))
+  (car (rogue/item/specifics weapon)))
 
 (defun rogue/weapon/max-dmg (weapon)
   "The maximal damage of WEAPON."
-  (caddr weapon))
+  (cadr (rogue/item/specifics weapon)))
 
 ;;; Spells ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
