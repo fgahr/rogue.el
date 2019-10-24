@@ -465,8 +465,8 @@ Returns the corresponding door if one exists, nil otherwise."
   (let ((monster (rogue/player/monster-collision-p)))
     (unless monster (error "Call to FIGHT with no monster present"))
     (setq *rogue-current-monster* monster)
-    (push (format "You are now fighting %s" (rogue/monster/type monster))
-          *rogue-fight-log*))
+    (rogue/fight/add-to-log "You are now fighting %s"
+                            (rogue/monster/type monster)))
   (use-local-map rogue/fight-keymap)
   (rogue/draw/fight)
   (message "Started fighting"))
@@ -486,10 +486,17 @@ Returns the corresponding door if one exists, nil otherwise."
          (use-local-map rogue/dungeon-keymap)
          (rogue/draw/dungeon))))
 
+(defun rogue/fight/add-to-log (string &rest args)
+  "Add a message to the current fight log. Format according to the format STRING
+using ARGS."
+  (unless *rogue-current-monster*
+    (error "Not in a fight but attempting to extend fight log."))
+  (push (apply #'format str args) *rogue-fight-log*))
+
 (defun rogue/fight/cannot-move ()
   "Signal the player that moving is disabled during a fight."
   (interactive)
-  (message "Cannot move -- Fighting"))
+  (rogue/notify "Cannot move -- Fighting"))
 
 (defun rogue/fight/move-done ()
   "Evaluations after attacking a monster."
@@ -500,8 +507,9 @@ Returns the corresponding door if one exists, nil otherwise."
 (defun rogue/fight/loot ()
   "Look for loot among the remains of a slain monster."
   (rogue/draw/fight)
-  (message "Press q to exit the fight screen")
-  'TODO)
+  (rogue/notify "Press q to exit the fight screen")
+  ;; TODO
+  nil)
 
 (defun rogue/fight/weapon-attack ()
   "Attack with the current weapon."
@@ -513,17 +521,16 @@ Returns the corresponding door if one exists, nil otherwise."
               (let ((dmg (rogue/weapon/dmg *rogue-player-weapon*))
                     (mtype (rogue/monster/type *rogue-current-monster*)))
                 (rogue/monster/reduce-hp *rogue-current-monster* dmg)
-                (push (format "You hit %s with %s for %d damage."
-                              mtype
-                              (rogue/weapon/type *rogue-player-weapon*)
-                              dmg)
-                      *rogue-fight-log*)
+                (rogue/fight/add-to-log
+                 "You hit %s with %s for %d damage."
+                 mtype
+                 (rogue/weapon/type *rogue-player-weapon*)
+                 dmg)
                 (when (not (rogue/monster/alive-p *rogue-current-monster*))
-                  (push (format "You killed %s." mtype)
-                        *rogue-fight-log*)))
+                  (rogue/fight/add-to-log "You killed %s." mtype)))
               (rogue/draw/fight)
               (rogue/fight/move-done))
-          (message "The monster is already dead"))
+          (rogue/notify "The monster is already dead"))
       (error "Not in a fight"))))
 
 (defun rogue/fight/cast-spell ()
@@ -543,13 +550,12 @@ Returns the corresponding door if one exists, nil otherwise."
   "The current monster attacks the player."
   (let ((dmg (rogue/monster/damage *rogue-current-monster*)))
     (rogue/player/reduce-hp dmg)
-    (push (format "%s hit you for %d damage."
-                  (rogue/monster/type *rogue-current-monster*)
-                  dmg)
-          *rogue-fight-log*)
+    (rogue/fight/add-to-log "%s hit you for %d damage."
+                            (rogue/monster/type *rogue-current-monster*)
+                            dmg)
     (if (not (rogue/player/alive-p))
         (progn
-          (push "You have died." *rogue-fight-log*)
+          (rogue/fight/add-to-log "You have died.")
           (rogue/draw/fight)
           (if (yes-or-no-p "Play again?")
               (rogue)
@@ -809,8 +815,12 @@ A monster is represented by a structure as follows:
 ;;; Game-Specific Utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun rogue/message/set (string &rest args)
-  "Set the current message for the player based on the format STRING and ARGS."
+  "Set the current message for the player, format based on STRING using ARGS."
   (setq *rogue-message* (apply #'format string args)))
+
+(defun rogue/notify (string &rest args)
+  "Show a notification for the player, format based on STRING using ARGS."
+  (message (apply #'format string args)))
 
 (defun rogue/function/healer (amount)
   "Create a function that heals the player for AMOUNT when executed."
@@ -828,6 +838,12 @@ A monster is represented by a structure as follows:
   "Function for an action only available in a fight."
   (message "Only available in a fight."))
 
+(defun rogue/function/no-effect (item combat)
+  "Function for an action of ITEM having no effect. If COMBAT is non-nil, print
+the message to the fight log, else to the player notification area."
+  (if combat
+      (lambda () ())))
+
 (defun rogue/function/damage-dealer (amount)
   "Afflict AMOUNT damage to the current monster, if any."
   (lambda ()
@@ -841,6 +857,20 @@ A monster is represented by a structure as follows:
 (defun rogue/weapon/make (name min-dmg max-dmg)
   "Create a weapon with a NAME as well as MIN-DMG and MAX-DMG values."
   (list name min-dmg max-dmg))
+
+(defun rogue/item/make (name can-equip in-dungeon in-fight on-attacked)
+  "Create an item with NAME and actions to execute. When CAN-EQUIP is
+non-nil, the item can be used as armor.
+
+All actions need to return the item, or nil if the item is consumed.
+IN-DUNGEON: Function to call when item is used in dungeon view.
+IN-FIGHT: Function to call when item is used in a fight.
+ON-ATTACKED: Function to call when player is attacked. Takes the attack
+damage as argument and returns the resulting attack damage."
+  (list name can-equip in-dungeon in-fight on-attacked))
+
+(defun rogue/armor/make (name on-attacked)
+  )
 
 (defvar +rogue-all-weapons+
   (list
@@ -916,10 +946,9 @@ must return a description of the spell's effects."
 
 (defun rogue/spell/cast-in-combat (spell)
   "Cast SPELL while in a fight."
-  (push (format "You cast %s -- %s"
-                (rogue/spell/name spell)
-                (funcall (caddr spell)))
-        *rogue-fight-log*))
+  (rogue/fight/add-to-log "You cast %s -- %s"
+                          (rogue/spell/name spell)
+                          (funcall (caddr spell))))
 
 ;;; Positioning ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
