@@ -214,10 +214,12 @@
                   *rogue-player-max-hp*))
   (insert (format "Weapon: %s\n"
                   (rogue/item/name *rogue-player-weapon*)))
-  (insert "Armor:")
+  (insert "Armor: ")
   (dolist (armor *rogue-player-armor*)
     (insert (format " %s" (rogue/item/name armor))))
-  (insert "\n\n"))
+  (insert "\n")
+  (insert (format "Spell:  %s\n" (rogue/spell/name *rogue-player-spell*)))
+  (insert "\n"))
 
 (defun rogue/draw/dungeon-row (n room-dims monsters door-places)
   "Draw line N of a room of size ROOM-DIMS, with MONSTERS and DOOR-PLACES."
