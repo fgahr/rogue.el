@@ -141,7 +141,7 @@
   (setq *rogue-message* "")
   (setq *rogue-player-current-hp* *rogue-player-max-hp*)
   (setq *rogue-player-weapon* (rogue/weapon/get 'SWORD))
-  (setq *rogue-player-armor* (list (rogue/armor/get 'SHIELD)))
+  (setq *rogue-player-armor* (list (rogue/armor/get 'BLADE-MAIL)))
   (setq *rogue-player-inventory*
         (cons *rogue-player-weapon* *rogue-player-armor*))
   (setq *rogue-player-spell* (rogue/spell/get 'HEAL))
@@ -211,7 +211,13 @@
                   (rogue/room/number *rogue-current-room*)))
   (insert (format "Hitpoints:  %d/%d\n\n"
                   *rogue-player-current-hp*
-                  *rogue-player-max-hp*)))
+                  *rogue-player-max-hp*))
+  (insert (format "Weapon: %s\n"
+                  (rogue/item/name *rogue-player-weapon*)))
+  (insert "Armor:")
+  (dolist (armor *rogue-player-armor*)
+    (insert (format " %s" (rogue/item/name armor))))
+  (insert "\n\n"))
 
 (defun rogue/draw/dungeon-row (n room-dims monsters door-places)
   "Draw line N of a room of size ROOM-DIMS, with MONSTERS and DOOR-PLACES."
@@ -868,15 +874,31 @@ them is the responsibility of more specialized functions."
   "The name of ITEM."
   (cadr item))
 
+(defun rogue/item/equip (item)
+  "Equip ITEM, either as a weapon or a piece of armor."
+  (cond ((rogue/item/weapon-p item) (setq *rogue-player-weapon* item))
+        ((rogue/item/armor-p item) (push item *rogue-player-armor*))
+        (t (error "Cannot equip %S" item))))
+
 (defun rogue/item/specifics (item)
   "The specific (type-dependent) properties of ITEM."
   (cddr item))
+
+(defun rogue/item/equipped-p (item)
+  "Whether ITEM is currently equipped."
+  (or (eq item *rogue-player-weapon*)
+      (seq-find (lambda (armor) (eq item armor))
+                *rogue-player-armor*)))
 
 ;;; Weapons ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun rogue/weapon/make (name min-dmg max-dmg)
   "Create a weapon with a NAME as well as MIN-DMG and MAX-DMG values."
   (rogue/item/make 'WEAPON name min-dmg max-dmg))
+
+(defun rogue/item/weapon-p (item)
+  "Whether ITEM is a weapon."
+  (eq (rogue/item/type item) 'WEAPON))
 
 (defvar +rogue-all-weapons+
   (list
@@ -930,6 +952,10 @@ The ON-ATTACKED function takes an initial damage and returns the possibly
 reduced resulting damage. Other actions can be executed as well."
   (rogue/item/make 'ARMOR name on-attacked))
 
+(defun rogue/item/armor-p (item)
+  "Whether ITEM is a piece of armor."
+  (eq (rogue/item/type item) 'ARMOR))
+
 (defun rogue/armor/damage-reducer (amount)
   "Reduce incoming damage by AMOUNT."
   (lambda (damage) (max 0 (- damage amount))))
@@ -945,7 +971,7 @@ reduced resulting damage. Other actions can be executed as well."
         (rogue/fight/add-to-log "%s takes %d damage"
                                 (rogue/monster/type *rogue-current-monster*)
                                 returned))
-      (- damage 2)))))
+      (max 0 (- damage 2))))))
 
 (make-variable-buffer-local '+rogue-all-armor+)
 
