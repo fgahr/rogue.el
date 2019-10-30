@@ -101,20 +101,7 @@
 (defvar *rogue-current-monster* nil "The monster currently in battle.")
 (defvar *rogue-fight-log* nil "The log of the current fight's events.")
 
-;;; Game Config ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defconst rogue/dungeon-keymap
-  (let ((map (make-sparse-keymap 'rogue/dungeon-keymap)))
-    (define-key map [left] #'rogue/player/move-left)
-    (define-key map [right] #'rogue/player/move-right)
-    (define-key map [up] #'rogue/player/move-up)
-    (define-key map [down] #'rogue/player/move-down)
-    (define-key map "i" #'rogue/player/access-inventory)
-    (define-key map "s" #'rogue/player/cast-spell)
-    (define-key map "q" #'rogue/quit)
-    map))
-
-;;; Gameplay ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; General ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun rogue ()
   "Play a game of Rogue."
@@ -164,44 +151,67 @@
       (rogue/message/set "")
       (rogue/draw/dungeon))))
 
+(defun rogue/back-to-dungeon ()
+  "Go back to dungeon view."
+  (use-local-map rogue/dungeon-keymap)
+  (rogue/draw/dungeon))
+
 ;;; Graphics ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmacro rogue/with-writable-buffer (&rest body)
+  "Execute BODY within a writable buffer."
+  `(progn (setq-local buffer-read-only nil)
+          (erase-buffer)
+          ,@body
+          (setq-local buffer-read-only t)))
 
 (defun rogue/draw/dungeon ()
   "Draw the dungeon screen."
-  (setq-local buffer-read-only nil)
-  (erase-buffer)
-  (rogue/draw/stat-header)
-  (let* ((dims (rogue/room/dims *rogue-current-room*))
-         (monsters (rogue/room/monsters *rogue-current-room*))
-         (door-places (mapcar #'rogue/door/placement
-                              (rogue/room/doors *rogue-current-room*)))
-         (top-pad (/ (- (rogue/dim/y dims)
-                        +rogue-room-max-side-length+)
-                     2)))
-    (dotimes (_ top-pad)
-      (newline))
-    (dotimes (n (rogue/dim/y dims))
-      (rogue/draw/dungeon-row n dims monsters door-places)))
-  (newline)
-  (insert *rogue-message*)
-  (newline)
-  (setq-local buffer-read-only t))
+  (rogue/with-writable-buffer
+   (rogue/draw/stat-header)
+   (let* ((dims (rogue/room/dims *rogue-current-room*))
+          (monsters (rogue/room/monsters *rogue-current-room*))
+          (door-places (mapcar #'rogue/door/placement
+                               (rogue/room/doors *rogue-current-room*)))
+          (top-pad (/ (- (rogue/dim/y dims)
+                         +rogue-room-max-side-length+)
+                      2)))
+     (dotimes (_ top-pad)
+       (newline))
+     (dotimes (n (rogue/dim/y dims))
+       (rogue/draw/dungeon-row n dims monsters door-places)))
+   (newline)
+   (insert *rogue-message*)
+   (newline)))
+
+(defun rogue/draw/inventory ()
+  "Draw the inventory access screen."
+  (rogue/with-writable-buffer
+   (rogue/draw/stat-header)
+   (let ((counter 0))
+     (dolist (item *rogue-player-inventory*)
+       (if (= counter *rogue-inventory-selection*)
+           (insert " * ")
+         (insert "   "))
+       (if (rogue/item/equipped-p item)
+           (insert "[+] ")
+         (insert "[ ] "))
+       (insert (format "%s\n" (rogue/item/name item)))
+       (setq counter (1+ counter))))))
 
 (defun rogue/draw/fight ()
   "Draw the fight screen for fighting the monster at the current position."
-  (setq-local buffer-read-only nil)
-  (erase-buffer)
-  (rogue/draw/stat-header)
-  (let* ((monster *rogue-current-monster*)
-         (type (rogue/monster/type monster)))
-    (insert (format "Monster:    %s\n" type))
-    (insert (format "Monster HP: %d/%d\n"
-                    (rogue/monster/hp monster)
-                    (rogue/monster/max-hp monster))))
-  (newline)
-  (dolist (log-line *rogue-fight-log*)
-    (insert log-line "\n"))
-  (setq-local buffer-read-only t))
+  (rogue/with-writable-buffer
+   (rogue/draw/stat-header)
+   (let* ((monster *rogue-current-monster*)
+          (type (rogue/monster/type monster)))
+     (insert (format "Monster:    %s\n" type))
+     (insert (format "Monster HP: %d/%d\n"
+                     (rogue/monster/hp monster)
+                     (rogue/monster/max-hp monster))))
+   (newline)
+   (dolist (log-line *rogue-fight-log*)
+     (insert log-line "\n"))))
 
 (defun rogue/draw/stat-header ()
   "Print a general stat header."
@@ -305,21 +315,29 @@ If HAS-DOOR is non-nil, add a door in its center."
                                                 +rogue/horizo-wall+))))
       (insert +rogue/blcorn-wall+ full-wall +rogue/brcorn-wall+))))
 
-;;; Players ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Player ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun rogue/player/access-inventory ()
-  "Access the player's inventory."
-  (interactive)
-  (error "Not yet implemented: Inventory"))
+(defun rogue/player/reduce-hp (amount)
+  "Reduce the player's hitpoints by AMOUNT."
+  (setq *rogue-player-current-hp*
+        (- *rogue-player-current-hp* amount)))
 
-(defun rogue/player/cast-spell ()
-  "Cast the currently active spell."
-  (interactive)
-  (if *rogue-player-spell*
-      (progn
-        (rogue/spell/cast-in-dungeon *rogue-player-spell*)
-        (rogue/draw/dungeon))
-    (error "No spell selected.")))
+(defun rogue/player/alive-p ()
+  "Whether the player is currently alive."
+  (> *rogue-player-current-hp* 0))
+
+;;; Movement ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defconst rogue/dungeon-keymap
+  (let ((map (make-sparse-keymap 'rogue/dungeon-keymap)))
+    (define-key map [left] #'rogue/player/move-left)
+    (define-key map [right] #'rogue/player/move-right)
+    (define-key map [up] #'rogue/player/move-up)
+    (define-key map [down] #'rogue/player/move-down)
+    (define-key map "i" #'rogue/player/access-inventory)
+    (define-key map "s" #'rogue/player/cast-spell)
+    (define-key map "q" #'rogue/quit)
+    map))
 
 (defun rogue/player/enter-door ()
   "Enter a door."
@@ -447,14 +465,68 @@ Returns the corresponding door if one exists, nil otherwise."
                      (t nil))))
     (assoc placement (rogue/room/doors *rogue-current-room*))))
 
-(defun rogue/player/reduce-hp (amount)
-  "Reduce the player's hitpoints by AMOUNT."
-  (setq *rogue-player-current-hp*
-        (- *rogue-player-current-hp* amount)))
+;;; Inventory ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun rogue/player/alive-p ()
-  "Whether the player is currently alive."
-  (> *rogue-player-current-hp* 0))
+(defvar *rogue-inventory-selection* 0
+  "The position of the currently selected inventory item.")
+
+(make-variable-buffer-local '*rogue-inventory-selection*)
+
+(defconst rogue/inventory-keymap
+  (let ((map (make-sparse-keymap 'rogue/inventory-keymap)))
+    (define-key map "e" #'rogue/inventory/equip-toggle)
+    (define-key map "q" #'rogue/inventory/exit)
+    (define-key map [down] #'rogue/inventory/select-next)
+    (define-key map [up] #'rogue/inventory/select-previous)
+    map))
+
+(defun rogue/player/access-inventory ()
+  "Access the player's inventory."
+  (interactive)
+  (use-local-map rogue/inventory-keymap)
+  (setq *rogue-inventory-selection* 0)
+  (rogue/draw/inventory))
+
+(defun rogue/inventory/exit ()
+  "Exit the inventory screen."
+  (interactive)
+  (rogue/back-to-dungeon))
+
+(defun rogue/inventory/equip-toggle ()
+  "Equip the currently selected item if possible."
+  (interactive)
+  (let ((item (nth *rogue-inventory-selection* *rogue-player-inventory*)))
+    (if (rogue/item/equipped-p item)
+        (rogue/item/unequip item)
+      (rogue/item/equip item)))
+  (rogue/draw/inventory))
+
+(defun rogue/inventory/select-next ()
+  "Select the next inventory item."
+  (interactive)
+  (setq *rogue-inventory-selection*
+        (min (1+ *rogue-inventory-selection*)
+             (1- (length *rogue-player-inventory*))))
+  (rogue/draw/inventory))
+
+(defun rogue/inventory/select-previous ()
+  "Select the previous inventory item."
+  (interactive)
+  (setq *rogue-inventory-selection*
+        (max (1- *rogue-inventory-selection*)
+             0))
+  (rogue/draw/inventory))
+
+;;; Magic ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun rogue/player/cast-spell ()
+  "Cast the currently active spell."
+  (interactive)
+  (if *rogue-player-spell*
+      (progn
+        (rogue/spell/cast-in-dungeon *rogue-player-spell*)
+        (rogue/draw/dungeon))
+    (error "No spell selected.")))
 
 ;;; Fight ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -462,7 +534,7 @@ Returns the corresponding door if one exists, nil otherwise."
   (let ((map (make-sparse-keymap 'rogue/fight-keymap)))
     (define-key map "a" #'rogue/fight/weapon-attack)
     (define-key map "s" #'rogue/fight/cast-spell)
-    (define-key map "q" #'rogue/fight/quit)
+    (define-key map "q" #'rogue/fight/exit)
     (define-key map [up] #'rogue/fight/cannot-move)
     (define-key map [right] #'rogue/fight/cannot-move)
     (define-key map [down] #'rogue/fight/cannot-move)
@@ -474,13 +546,14 @@ Returns the corresponding door if one exists, nil otherwise."
   (let ((monster (rogue/player/monster-collision-p)))
     (unless monster (error "Call to FIGHT with no monster present"))
     (setq *rogue-current-monster* monster)
+    (setq *rogue-fight-log* nil)
     (rogue/fight/add-to-log "You are now fighting %s"
                             (rogue/monster/type monster)))
   (use-local-map rogue/fight-keymap)
   (rogue/draw/fight)
   (message "Started fighting"))
 
-(defun rogue/fight/quit ()
+(defun rogue/fight/exit ()
   "Exit fight mode."
   (interactive)
   (cond ((not (rogue/player/alive-p))
@@ -491,9 +564,7 @@ Returns the corresponding door if one exists, nil otherwise."
          (rogue/message/set "You defeated %s"
                             (rogue/monster/type *rogue-current-monster*))
          (setq *rogue-current-monster* nil)
-         (setq *rogue-fight-log* nil)
-         (use-local-map rogue/dungeon-keymap)
-         (rogue/draw/dungeon))))
+         (rogue/back-to-dungeon))))
 
 (defun rogue/fight/add-to-log (string &rest args)
   "Add a message to the current fight log. Format according to the format STRING
@@ -836,10 +907,11 @@ A monster is represented by a structure as follows:
 (defun rogue/function/healer (amount)
   "Create a function that heals the player for AMOUNT when executed."
   (lambda ()
-    (setq *rogue-player-current-hp*
-          (min *rogue-player-max-hp*
-               (+ *rogue-player-current-hp* amount)))
-    (format "You regain %d hitpoints" amount)))
+    (let ((healed (min amount
+                       (- *rogue-player-max-hp*
+                          *rogue-player-current-hp*))))
+      (setq *rogue-player-current-hp* (+ *rogue-player-current-hp* healed))
+      (format "You regain %d hitpoints" healed))))
 
 (defun rogue/function/not-in-combat ()
   "Function for an action unavailable in a fight."
@@ -881,6 +953,14 @@ them is the responsibility of more specialized functions."
   (cond ((rogue/item/weapon-p item) (setq *rogue-player-weapon* item))
         ((rogue/item/armor-p item) (push item *rogue-player-armor*))
         (t (error "Cannot equip %S" item))))
+
+(defun rogue/item/unequip (item)
+  (cond ((rogue/item/weapon-p item) (setq *rogue-player-weapon* nil))
+        ((rogue/item/armor-p item)
+         (setq *rogue-player-armor*
+               (seq-remove (lambda (it) (eq it item))
+                           *rogue-player-armor*)))
+        (t (error "Not equippable: %S" item))))
 
 (defun rogue/item/specifics (item)
   "The specific (type-dependent) properties of ITEM."
