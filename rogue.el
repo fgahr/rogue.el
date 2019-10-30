@@ -63,10 +63,14 @@
   "The player's inventory.")
 (defvar *rogue-player-weapon* nil
   "The currently held weapon.")
-(defvar *rogue-player-spell* nil
-  "The currently active spell.")
 (defvar *rogue-inventory-selection* 0
   "The position of the currently selected inventory item.")
+(defvar *rogue-player-spell* nil
+  "The currently active spell.")
+(defvar *rogue-player-available-spells* nil
+  "The spells available to the player.")
+(defvar *rogue-spell-selection* 0
+  "The position of the currently selected spell.")
 
 (make-variable-buffer-local '*rogue-message*)
 (make-variable-buffer-local '*rogue-player-max-hp*)
@@ -74,8 +78,10 @@
 (make-variable-buffer-local '*rogue-player-armor*)
 (make-variable-buffer-local '*rogue-player-inventory*)
 (make-variable-buffer-local '*rogue-player-weapon*)
-(make-variable-buffer-local '*rogue-player-spell*)
 (make-variable-buffer-local '*rogue-inventory-selection*)
+(make-variable-buffer-local '*rogue-player-spell*)
+(make-variable-buffer-local '*rogue-player-available-spells*)
+(make-variable-buffer-local '*rogue-spell-selection*)
 
 ;; Level related
 
@@ -106,17 +112,6 @@
 
 ;;; Keymaps ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defconst rogue/inventory-keymap
-  (let ((map (make-sparse-keymap 'rogue/inventory-keymap)))
-    (define-key map "e" #'rogue/inventory/equip-toggle)
-    (define-key map "q" #'rogue/inventory/exit)
-    (define-key map [down] #'rogue/inventory/select-next)
-    (define-key map [up] #'rogue/inventory/select-previous)
-    map))
-
-(defconst +rogue/inventory/usage+
-  "[up/down] change selection -- [e] toggle equip -- [q] exit inventory\n")
-
 (defconst rogue/dungeon-keymap
   (let ((map (make-sparse-keymap 'rogue/dungeon-keymap)))
     (define-key map [left] #'rogue/player/move-left)
@@ -124,8 +119,8 @@
     (define-key map [up] #'rogue/player/move-up)
     (define-key map [down] #'rogue/player/move-down)
     (define-key map "i" #'rogue/player/access-inventory)
-    (define-key map "s" #'rogue/player/cast-spell)
     (define-key map "m" #'rogue/player/access-magic-menu)
+    (define-key map "s" #'rogue/player/cast-spell)
     (define-key map "q" #'rogue/quit)
     map))
 
@@ -147,6 +142,28 @@
 
 (defconst +rogue/fight/usage+
   "[a] attack with weapon -- [s] cast current spell -- [q] exit the fight\n")
+
+(defconst rogue/inventory-keymap
+  (let ((map (make-sparse-keymap 'rogue/inventory-keymap)))
+    (define-key map "e" #'rogue/inventory/equip-toggle)
+    (define-key map "q" #'rogue/inventory/exit)
+    (define-key map [down] #'rogue/inventory/select-next)
+    (define-key map [up] #'rogue/inventory/select-previous)
+    map))
+
+(defconst +rogue/inventory/usage+
+  "[up/down] change selection -- [e] toggle equip -- [q] exit inventory\n")
+
+(defconst rogue/magic-menu-keymap
+  (let ((map (make-sparse-keymap 'rogue/magic-menu-keymap)))
+    (define-key map "e" #'rogue/magic-menu/activate-spell)
+    (define-key map "q" #'rogue/magic-menu/exit)
+    (define-key map [down] #'rogue/magic-menu/select-next)
+    (define-key map [up] #'rogue/magic-menu/select-previous)
+    map))
+
+(defconst +rogue/magic-menu/usage+
+  "[up/down] change selection -- [e] set spell active -- [q] exit magic menu\n")
 
 ;;; General ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -179,6 +196,8 @@
   (setq *rogue-player-inventory*
         (cons *rogue-player-weapon* *rogue-player-armor*))
   (setq *rogue-player-spell* (rogue/spell/get 'HEAL))
+  (setq *rogue-player-available-spells*
+        (list *rogue-player-spell* (rogue/spell/get 'LIGHTNING)))
   (setq *rogue-current-monster* nil)
   (setq *rogue-fight-log* nil)
   (rogue/draw/dungeon))
@@ -246,6 +265,23 @@
        (setq counter (1+ counter))))
    (newline)
    (insert +rogue/inventory/usage+)))
+
+(defun rogue/draw/magic-menu ()
+  "Draw the magic menu screen."
+  (rogue/draw/with-writable-buffer
+   (rogue/draw/stat-header)
+   (let ((counter 0))
+     (dolist (spell *rogue-player-available-spells*)
+       (if (= counter *rogue-spell-selection*)
+           (insert " * ")
+         (insert "   "))
+       (if (rogue/spell/active-p spell)
+           (insert "[+] ")
+         (insert "[ ] "))
+       (insert (format "%s\n" (rogue/spell/name spell)))
+       (setq counter (1+ counter))))
+   (newline)
+   (insert +rogue/magic-menu/usage+)))
 
 (defun rogue/draw/fight ()
   "Draw the fight screen for fighting the monster at the current position."
@@ -550,7 +586,37 @@ Returns the corresponding door if one exists, nil otherwise."
 (defun rogue/player/access-magic-menu ()
   "Access the magic menu."
   (interactive)
-  (error "Not yet implemented: magic menu"))
+  (use-local-map rogue/magic-menu-keymap)
+  (rogue/draw/magic-menu))
+
+(defun rogue/magic-menu/exit ()
+  "Return to dungeon view."
+  (interactive)
+  (use-local-map rogue/dungeon-keymap)
+  (rogue/draw/dungeon))
+
+(defun rogue/magic-menu/select-next ()
+  "Select the next spell in the menu."
+  (interactive)
+  (setq *rogue-spell-selection*
+        (min (1+ *rogue-spell-selection*)
+             (1- (length *rogue-player-available-spells*))))
+  (rogue/draw/magic-menu))
+
+(defun rogue/magic-menu/select-previous()
+  "Select the previous spell in the menu."
+  (interactive)
+  (setq *rogue-spell-selection*
+        (max (1- *rogue-spell-selection*)
+             0))
+  (rogue/draw/magic-menu))
+
+(defun rogue/magic-menu/activate-spell ()
+  "Activate the currently selected spell."
+  (interactive)
+  (let ((spell (nth *rogue-spell-selection* *rogue-player-available-spells*)))
+    (setq *rogue-player-spell* spell))
+  (rogue/draw/magic-menu))
 
 ;;; Fight ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -580,10 +646,11 @@ Returns the corresponding door if one exists, nil otherwise."
          (rogue/back-to-dungeon))))
 
 (defun rogue/fight/add-to-log (string &rest args)
-  "Add a message to the current fight log. Format according to the format STRING
-using ARGS."
+  "Add a message to the current fight log.
+
+Format according to the format STRING using ARGS."
   (unless *rogue-current-monster*
-    (error "Not in a fight but attempting to extend fight log."))
+    (error "Not in a fight but attempting to extend fight log"))
   (push (apply #'format string args) *rogue-fight-log*))
 
 (defun rogue/fight/cannot-move ()
@@ -1098,6 +1165,11 @@ The latter two arguments need to be callable functions without arguments. They
 must return a description of the spell's effects."
   (list name in-dungeon in-combat))
 
+(defun rogue/spell/learn (spell)
+  "Make SPELL available to the player."
+  (unless (seq-contains *rogue-player-available-spells* spell)
+    (push spell *rogue-player-available-spells*)))
+
 (defvar +rogue-all-spells+
   (list
    ;; TODO: Make useful list of spells
@@ -1129,6 +1201,10 @@ must return a description of the spell's effects."
   (rogue/fight/add-to-log "You cast %s -- %s"
                           (rogue/spell/name spell)
                           (funcall (caddr spell))))
+
+(defun rogue/spell/active-p (spell)
+  "Whether SPELL is currently active."
+  (eq spell *rogue-player-spell*))
 
 ;;; Positioning ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -1235,14 +1311,14 @@ must return a description of the spell's effects."
                                           upper-limit)))))
 
 (defun rogue/util/any-null-p (sequences)
-  "T if any of SEQUENCES is empty, else nil."
+  "Whether any of SEQUENCES is empty."
   (cond
    ((null sequences) nil)
    ((null (car sequences)) t)
    (t (rogue/util/any-null-p (cdr sequences)))))
 
 (defun rogue/util/abs (number)
-  "The absolute magnitude of a number."
+  "The absolute magnitude of NUMBER."
   (if (< number 0)
       (- number)
     number))
