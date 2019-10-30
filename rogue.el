@@ -175,7 +175,7 @@
   (setq *rogue-message* "")
   (setq *rogue-player-current-hp* *rogue-player-max-hp*)
   (setq *rogue-player-weapon* (rogue/weapon/get 'SWORD))
-  (setq *rogue-player-armor* (list (rogue/armor/get 'BLADE-MAIL)))
+  (setq *rogue-player-armor* (list (rogue/armor/get 'SHIELD)))
   (setq *rogue-player-inventory*
         (cons *rogue-player-weapon* *rogue-player-armor*))
   (setq *rogue-player-spell* (rogue/spell/get 'HEAL))
@@ -968,7 +968,9 @@ them is the responsibility of more specialized functions."
 
 (defun rogue/item/name (item)
   "The name of ITEM."
-  (cadr item))
+  (if (null item)
+      'NOTHING
+    (cadr item)))
 
 (defun rogue/item/equip (item)
   "Equip ITEM, either as a weapon or a piece of armor."
@@ -1029,12 +1031,13 @@ them is the responsibility of more specialized functions."
 
 (defun rogue/weapon/dmg (weapon)
   "The damage for the next attack with WEAPON."
-  (unless (eq (rogue/item/type weapon) 'WEAPON)
-    (error "Item is not a weapon: %S" weapon))
-  (let ((min-dmg (rogue/weapon/min-dmg weapon))
-        (max-dmg (rogue/weapon/max-dmg weapon)))
-    (+ min-dmg
-       (random (+ 1 (- max-dmg min-dmg))))))
+  (cond ((null weapon) 1)
+        ((rogue/item/weapon-p weapon)
+         (let ((min-dmg (rogue/weapon/min-dmg weapon))
+               (max-dmg (rogue/weapon/max-dmg weapon)))
+           (+ min-dmg
+              (random (+ 1 (- max-dmg min-dmg))))))
+        (t (error "Item is not a weapon: %S" weapon))))
 
 (defun rogue/weapon/min-dmg (weapon)
   "The minimal damage of WEAPON."
