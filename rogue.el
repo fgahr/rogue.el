@@ -404,53 +404,38 @@ If HAS-DOOR is non-nil, add a door in its center."
     (setq *rogue-current-room* target-room))
   (rogue/draw/dungeon))
 
+(defun rogue/player/make-move (modifier-function)
+  "Attempt to make a move based on the MODIFIER-FUNCTION."
+  (let ((old-pos (rogue/pos (rogue/pos/x *rogue-player-position*)
+                            (rogue/pos/y *rogue-player-position*))))
+    (funcall modifier-function *rogue-player-position*)
+    (cond
+     ((rogue/player/wall-collision-p)
+      (setq *rogue-player-position* old-pos)
+      (rogue/message/set "Ouch!")
+      (rogue/draw/dungeon))
+     (t (rogue/message/set "")
+        (rogue/player/check-collisions)))))
+
 (defun rogue/player/move-left ()
   "Move the player to the left."
   (interactive)
-  (rogue/pos/x-dec *rogue-player-position*)
-  (cond
-   ((rogue/player/wall-collision-p)
-    (rogue/pos/x-inc *rogue-player-position*)
-    (rogue/message/set "Ouch!")
-    (rogue/draw/dungeon))
-   (t (rogue/message/set "")
-      (rogue/player/check-collisions))))
+  (rogue/player/make-move #'rogue/pos/x-dec))
 
 (defun rogue/player/move-right ()
   "Move the player to the right."
   (interactive)
-  (rogue/pos/x-inc *rogue-player-position*)
-  (cond
-   ((rogue/player/wall-collision-p)
-    (rogue/pos/x-dec *rogue-player-position*)
-    (rogue/message/set "Ouch!")
-    (rogue/draw/dungeon))
-   (t (rogue/message/set "")
-      (rogue/player/check-collisions))))
+  (rogue/player/make-move #'rogue/pos/x-inc))
 
 (defun rogue/player/move-up ()
   "Move the player up."
   (interactive)
-  (rogue/pos/y-dec *rogue-player-position*)
-  (cond
-   ((rogue/player/wall-collision-p)
-    (rogue/pos/y-inc *rogue-player-position*)
-    (rogue/message/set "Ouch!")
-    (rogue/draw/dungeon))
-   (t (rogue/message/set "")
-      (rogue/player/check-collisions))))
+  (rogue/player/make-move #'rogue/pos/y-dec))
 
 (defun rogue/player/move-down ()
   "Move the player down."
   (interactive)
-  (rogue/pos/y-inc *rogue-player-position*)
-  (cond
-   ((rogue/player/wall-collision-p)
-    (rogue/pos/y-dec *rogue-player-position*)
-    (rogue/message/set "Ouch!")
-    (rogue/draw/dungeon))
-   (t (rogue/message/set "")
-      (rogue/player/check-collisions))))
+  (rogue/player/make-move #'rogue/pos/y-inc))
 
 (defun rogue/player/check-collisions ()
   "Check the current player position for possible collisions and react."
