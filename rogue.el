@@ -23,8 +23,6 @@
 (defconst +rogue-player-symbol+ "@"
   "Representation of the player on the board.")
 
-;;; Game Parameters ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 ;; General config
 
 (defconst +rogue-buffer-name+ "A simple roguelike"
@@ -45,6 +43,8 @@
 (defconst +rogue/stairs-up+ "⇑" "Stairs to another level.")
 (defconst +rogue/stairs-down+ "⇓" "Stairs to another level.")
 (defconst +rogue/empty-tile+ " " "The representation of an empty dungeon tile.")
+
+;;; Game State ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Player related
 
@@ -104,7 +104,7 @@
 (defvar *rogue-current-monster* nil "The monster currently in battle.")
 (defvar *rogue-fight-log* nil "The log of the current fight's events.")
 
-;; Keymaps and related variables
+;;; Keymaps ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defconst rogue/inventory-keymap
   (let ((map (make-sparse-keymap 'rogue/inventory-keymap)))
@@ -194,9 +194,7 @@
   (rogue/monsters/move)
   (if (rogue/player/monster-collision-p)
       (rogue/fight/start)
-    (progn
-      (rogue/message/set "")
-      (rogue/draw/dungeon))))
+    (rogue/draw/dungeon)))
 
 (defun rogue/back-to-dungeon ()
   "Go back to dungeon view."
@@ -413,8 +411,10 @@ If HAS-DOOR is non-nil, add a door in its center."
   (cond
    ((rogue/player/wall-collision-p)
     (rogue/pos/x-inc *rogue-player-position*)
-    (message "Ouch!"))
-   (t (rogue/player/check-collisions))))
+    (rogue/message/set "Ouch!")
+    (rogue/draw/dungeon))
+   (t (rogue/message/set "")
+      (rogue/player/check-collisions))))
 
 (defun rogue/player/move-right ()
   "Move the player to the right."
@@ -423,8 +423,10 @@ If HAS-DOOR is non-nil, add a door in its center."
   (cond
    ((rogue/player/wall-collision-p)
     (rogue/pos/x-dec *rogue-player-position*)
-    (message "Ouch!"))
-   (t (rogue/player/check-collisions))))
+    (rogue/message/set "Ouch!")
+    (rogue/draw/dungeon))
+   (t (rogue/message/set "")
+      (rogue/player/check-collisions))))
 
 (defun rogue/player/move-up ()
   "Move the player up."
@@ -433,8 +435,10 @@ If HAS-DOOR is non-nil, add a door in its center."
   (cond
    ((rogue/player/wall-collision-p)
     (rogue/pos/y-inc *rogue-player-position*)
-    (message "Ouch!"))
-   (t (rogue/player/check-collisions))))
+    (rogue/message/set "Ouch!")
+    (rogue/draw/dungeon))
+   (t (rogue/message/set "")
+      (rogue/player/check-collisions))))
 
 (defun rogue/player/move-down ()
   "Move the player down."
@@ -443,8 +447,10 @@ If HAS-DOOR is non-nil, add a door in its center."
   (cond
    ((rogue/player/wall-collision-p)
     (rogue/pos/y-dec *rogue-player-position*)
-    (message "Ouch!"))
-   (t (rogue/player/check-collisions))))
+    (rogue/message/set "Ouch!")
+    (rogue/draw/dungeon))
+   (t (rogue/message/set "")
+      (rogue/player/check-collisions))))
 
 (defun rogue/player/check-collisions ()
   "Check the current player position for possible collisions and react."
