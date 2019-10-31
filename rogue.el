@@ -743,27 +743,31 @@ Format according to the format STRING using ARGS."
     (let* ((first-level (assoc 1 levels))
            (last-room (rogue/level/last-room first-level)))
       (rogue/room/place-object-center last-room (rogue/stairs/make 1 2)))
-    (dolist (lvl-num (rogue/util/range 2 (1- +rogue-num-levels+)))
+    (dolist (lvl-num (rogue/util/range 2 +rogue-num-levels+))
       (let ((level (assoc lvl-num levels)))
-        (rogue/room/place-object-center (rogue/level/first-room level)
-                                        (rogue/stairs/make lvl-num (1- lvl-num)))
-        (rogue/room/place-object-center (rogue/level/last-room level)
-                                        (rogue/stairs/make lvl-num (1+ lvl-num)))))
+        (rogue/room/place-object-center
+         (rogue/level/first-room level)
+         (rogue/stairs/make lvl-num (1- lvl-num)))
+        (rogue/room/place-object-center
+         (rogue/level/last-room level)
+         (rogue/stairs/make lvl-num (1+ lvl-num)))))
     levels))
 
 (defun rogue/levels/make-one (level-number)
   "Create and populate level LEVEL-NUMBER."
-  (let* ((room-numbers (mapcar (lambda (x) (+ x (* 100 level-number)))
-                               (rogue/util/range 1 (1+ +rogue-rooms-per-level+))))
-         (shuf (rogue/util/shuffle-list room-numbers))
-         (partitioned (rogue/util/sublists 2 3 shuf))
+  (let* ((room-numbers
+          (mapcar (lambda (x) (+ x (* 100 level-number)))
+                  (rogue/util/range 1 (1+ +rogue-rooms-per-level+))))
+         (shuffled (rogue/util/shuffle-list room-numbers))
+         (partitioned (rogue/util/sublists 2 3 shuffled))
          (rooms-unsorted
-          (cons (rogue/room/make (caar partitioned)
-                                  (list (cadar partitioned)))
+          (cons (rogue/room/make
+                 (caar partitioned)
+                 (list (cadar partitioned)))
                 (mapcar (lambda (numbers)
-                          (rogue/room/make (cadr numbers)
-                                            (cons (car numbers)
-                                                  (cddr numbers))))
+                          (rogue/room/make
+                           (cadr numbers)
+                           (cons (car numbers) (cddr numbers))))
                         partitioned)))
          (rooms (sort rooms-unsorted
                       (lambda (x y)
@@ -991,7 +995,7 @@ SPECIFICS relating to its type can be given as well."
             (rogue/level/first-room target-level)))
     (setq *rogue-player-position*
           (rogue/room/center *rogue-current-room*)))
-  (rogue/player/move-done))
+  (rogue/draw/dungeon))
 
 ;;; Monsters ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
