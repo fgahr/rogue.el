@@ -729,28 +729,37 @@ Format according to the format STRING using ARGS."
 (defun rogue/levels/make-all (num-levels)
   "Create NUM-LEVELS levels and connect them."
   (let ((levels (mapcar #'rogue/levels/make-one
-                            (rogue/util/range 1 num-levels))))
-    ;; TODO
+                        (rogue/util/range 1 num-levels))))
+    (let* ((first-level (assoc 1 levels))
+           (last-room (rogue/level/last-room first-level)))
+      (rogue/room/place-object-center last-room (rogue/stairs/make 1 2)))
+    (dolist (lvl-num (rogue/util/range 2 (1- +rogue-num-levels+)))
+      (let ((level (assoc lvl-num levels)))
+        (rogue/room/place-object-center (rogue/level/first-room level)
+                                        (rogue/stairs/make lvl-num (1- lvl-num)))
+        (rogue/room/place-object-center (rogue/level/last-room level)
+                                        (rogue/stairs/make lvl-num (1+ lvl-num)))))
     levels))
 
 (defun rogue/levels/make-one (level-number)
   "Create and populate level LEVEL-NUMBER."
   (let* ((room-numbers (mapcar (lambda (x) (+ x (* 100 level-number)))
-                               (rogue/util/range 1 +rogue-rooms-per-level+)))
+                               (rogue/util/range 1 (1+ +rogue-rooms-per-level+))))
          (shuf (rogue/util/shuffle-list room-numbers))
          (partitioned (rogue/util/sublists 2 3 shuf))
          (rooms-unsorted
-          (cons (rogue/rooms/make level-number
-                                  (caar partitioned)
+          (cons (rogue/room/make (caar partitioned)
                                   (list (cadar partitioned)))
                 (mapcar (lambda (numbers)
-                          (rogue/rooms/make level-number
-                                            (cadr numbers)
-                                            (cons (car numbers) (cddr numbers))))
+                          (rogue/room/make (cadr numbers)
+                                            (cons (car numbers)
+                                                  (cddr numbers))))
                         partitioned)))
          (rooms (sort rooms-unsorted
                       (lambda (x y)
                         (< (car x) (car y))))))
+    (dolist (room rooms)
+      (rogue/room/place-monsters room (rogue/monsters/for-level level-number)))
     (cons level-number rooms)))
 
 (defun rogue/level/number (level)
@@ -774,9 +783,24 @@ Format according to the format STRING using ARGS."
   "The last room of LEVEL."
   (let ((room-number (+ +rogue-rooms-per-level+
                         (* 100 (rogue/level/number level)))))
-    (rogue/level/room level room-number)))
+    (let ((room (rogue/level/room level room-number)))
+      (when (null room)
+        (error "No such room: %d" room-number))
+      room)))
 
 ;;; Rooms ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun rogue/roll-monster-position (dimensions occupied)
+  "Find a random position within DIMENSIONS outside the OCCUPIED spaces."
+  ;; Don't place monsters on wall tiles.
+  (let* ((x (+ 2 (random (- (rogue/dim/x dimensions) 4))))
+         (y (+ 2 (random (- (rogue/dim/y dimensions) 4))))
+         (pos (rogue/pos x y)))
+    (if (or (seq-contains occupied pos)
+            ;; Center tiles of rooms are reserved for other entities.
+            (equal pos (rogue/dim/center dimensions)))
+        (rogue/roll-monster-position dimensions occupied)
+      pos)))
 
 (defun rogue/rooms/side-len ()
   "One random side length of a room.
@@ -787,22 +811,7 @@ Possible sizes are delimited by +ROGUE-MIN-SIDE-LENGTH+ and
          (/ (- +rogue-room-max-side-length+ +rogue-room-min-side-length+) 2)))
     (+ (* 2 (/ +rogue-room-min-side-length+ 2)) (* 2 (random addend)) 1)))
 
-(defun rogue/rooms/monsters (level)
-  "Random monsters for a room in LEVEL."
-  (cond ((= level 1)
-         (seq-random-elt '((OGRE)
-                           (SKELETON SKELETON)
-                           (GOAT GOAT SKELETON))))
-        ((= level 2)
-         (seq-random-elt '((OGRE SKELETON) (CENTAUR))))
-        ((= level 3)
-         ;; Pick any two
-         (let ((available '(CENTAUR MEDUSA DRAGON)))
-           (list (seq-random-elt available)
-                 (seq-random-elt available))))
-        (t (error "No monsters defined for level number %d" level))))
-
-(defun rogue/rooms/make (level room-number adjacent-rooms)
+(defun rogue/room/make (room-number adjacent-rooms)
   "Create room ROOM-NUMBER in LEVEL with and doors leading to ADJACENT-ROOMS.
 
 Dimensions, monsters, and objects are chosen randomly in accordance with the
@@ -810,12 +819,9 @@ relevant variables."
   (let* ((dimensions (rogue/dim (rogue/rooms/side-len)
                                 (rogue/rooms/side-len)))
          (doors (rogue/doors/place adjacent-rooms))
-         (monster-types (rogue/rooms/monsters level))
-         (monsters (rogue/monsters/place-in-dim monster-types
-                                                dimensions))
+         (monsters '())
          (objects '()))
-    (list room-number dimensions doors monsters
-          objects)))
+    (list room-number dimensions doors monsters objects)))
 
 (defun rogue/room/number (room)
   "The number of ROOM."
@@ -841,6 +847,30 @@ relevant variables."
 (defun rogue/room/objects (room)
   "The list of objects from ROOM."
   (nth 4 room))
+
+(defun rogue/room/occupied-places (room)
+  "Places in ROOM that are occupied by monsters or objects."
+  ;; The center is always considered occupied.
+  (cons (rogue/room/center room)
+        (append (mapcar #'rogue/object/position (rogue/room/objects room))
+                (mapcar #'rogue/monster/pos (rogue/room/monsters room)))))
+
+(defun rogue/room/place-monsters (room monster-types)
+  "Place monsters of MONSTER-TYPES in ROOM."
+  (let ((dimensions (rogue/room/dims room))
+        (monsters (mapcar #'rogue/monsters/make monster-types))
+        (occupied (list (rogue/room/center room))))
+    (dolist (monster monsters)
+      (let ((position (rogue/roll-monster-position dimensions occupied)))
+        (push position occupied)
+        (rogue/monster/set-position monster position)))
+    (setcar (nthcdr 3 room) monsters)))
+
+(defun rogue/room/place-object-center (room object)
+  "Add OBJECT to ROOM."
+  (rogue/object/place-at object (rogue/room/center room))
+  (setcar (nthcdr 4 room)
+          (cons object (rogue/room/objects room))))
 
 ;;; Doors ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -892,14 +922,18 @@ SPECIFICS relating to its type can be given as well."
   "The specifics of OBJECT."
   (cdddr object))
 
+(defun rogue/object/place-at (object position)
+  "Place OBJECT at POSITION."
+  (setcar (cdr object) position))
+
 (defun rogue/stairs/make (from-level to-level)
   "Create stairs between FROM-LEVEL and TO-LEVEL."
-  (let* ((fnum (rogue/level/number from-level))
-         (tnum (rogue/level/number to-level))
-         (symbol (if (< fnum tnum) +rogue/stairs-up+ +rogue/stairs-down+)))
-    (when (= fnum tnum)
+  (let* ((symbol (if (< from-level to-level)
+                     +rogue/stairs-up+
+                   +rogue/stairs-down+)))
+    (when (= from-level to-level)
       (error "Stairs must connect two distinct levels"))
-    (rogue/object/make 'STAIRS symbol fnum tnum)))
+    (rogue/object/make 'STAIRS '() symbol from-level to-level)))
 
 (defun rogue/stairs/from-level (stairs)
   "The origin level of STAIRS."
@@ -928,28 +962,6 @@ SPECIFICS relating to its type can be given as well."
             (rogue/level/first-room target-level)))))
 
 ;;; Monsters ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defun rogue/monsters/roll-position (dimensions occupied)
-  "Find a random position within DIMENSIONS outside the OCCUPIED spaces."
-  ;; Don't place monsters on wall tiles.
-  (let* ((x (+ 2 (random (- (rogue/dim/x dimensions) 4))))
-         (y (+ 2 (random (- (rogue/dim/y dimensions) 4))))
-         (pos (rogue/pos x y)))
-    (if (or (seq-contains occupied pos)
-            ;; Center tiles of rooms are reserved for other entities.
-            (equal pos (rogue/dim/center dimensions)))
-        (rogue/monsters/roll-position dimensions occupied)
-      pos)))
-
-(defun rogue/monsters/place-in-dim (monster-types dimensions)
-  "Place monsters of the given MONSTER-TYPES in a space of DIMENSIONS."
-  (let ((monsters (mapcar #'rogue/monsters/make monster-types))
-        (occupied '()))
-    (dolist (monster monsters)
-      (let ((position (rogue/monsters/roll-position dimensions occupied)))
-        (push position occupied)
-        (rogue/monster/set-position monster position)))
-    monsters))
 
 (defun rogue/monsters/monster-at (pos monsters)
   "Find the monster at POS in the list of MONSTERS."
@@ -994,6 +1006,21 @@ A monster is represented by a structure as follows:
    ((eq type 'DRAGON)
     (list type "D" (cons 18 18) 6 nil))
    (t (error "Unknown monster type '%s'" type))))
+
+(defun rogue/monsters/for-level (level)
+  "Random monsters for a room in LEVEL."
+  (cond ((= level 1)
+         (seq-random-elt '((OGRE)
+                           (SKELETON SKELETON)
+                           (GOAT GOAT SKELETON))))
+        ((= level 2)
+         (seq-random-elt '((OGRE SKELETON) (CENTAUR))))
+        ((= level 3)
+         ;; Pick any two
+         (let ((available '(CENTAUR MEDUSA DRAGON)))
+           (list (seq-random-elt available)
+                 (seq-random-elt available))))
+        (t (error "No monsters defined for level number %d" level))))
 
 (defun rogue/monster/type (monster)
   "The type of MONSTER."
