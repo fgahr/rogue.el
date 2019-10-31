@@ -85,7 +85,7 @@
 
 ;; Level related
 
-(defconst +rogue-rooms-per-level+ 25
+(defconst +rogue-rooms-per-level+ 10 ;25
   "The number of rooms per level. Must be less than 100.")
 (defconst +rogue-num-levels+ 3
   "The number of levels in the game.")
@@ -235,6 +235,7 @@
    (rogue/draw/stat-header)
    (let* ((dims (rogue/room/dims *rogue-current-room*))
           (monsters (rogue/room/monsters *rogue-current-room*))
+          (objects (rogue/room/objects *rogue-current-room*))
           (door-places (mapcar #'rogue/door/placement
                                (rogue/room/doors *rogue-current-room*)))
           (top-pad (/ (- (rogue/dim/y dims)
@@ -243,7 +244,7 @@
      (dotimes (_ top-pad)
        (newline))
      (dotimes (n (rogue/dim/y dims))
-       (rogue/draw/dungeon-row n dims monsters door-places)))
+       (rogue/draw/dungeon-row n dims monsters objects door-places)))
    (newline)
    (insert *rogue-message*)
    (newline)
@@ -317,8 +318,8 @@
   (insert (format "Spell:  %s\n" (rogue/spell/name *rogue-player-spell*)))
   (insert "\n"))
 
-(defun rogue/draw/dungeon-row (n room-dims monsters door-places)
-  "Draw line N of a room of size ROOM-DIMS, with MONSTERS and DOOR-PLACES."
+(defun rogue/draw/dungeon-row (n room-dims monsters objects door-places)
+  "Draw row N of a ROOM-DIMS size with MONSTERS, OBJECTS, and DOOR-PLACES."
   (let* ((left-pad (/ (- +rogue-room-max-side-length+
                          (rogue/dim/x room-dims))
                       2))
@@ -340,37 +341,39 @@
      ;; Possible door elements at west and east end.
      ((= n (1- horiz-door-line))
       (insert (if has-west-door +rogue/door-top+ +rogue/vertic-wall+))
-      (rogue/draw/dungeon-interior n monsters)
+      (rogue/draw/dungeon-interior n monsters objects)
       (insert (if has-east-door +rogue/door-top+ +rogue/vertic-wall+)))
      ((= n horiz-door-line)
       (insert (if has-west-door +rogue/empty-tile+ +rogue/vertic-wall+))
-      (rogue/draw/dungeon-interior n monsters)
+      (rogue/draw/dungeon-interior n monsters objects)
       (insert (if has-east-door +rogue/empty-tile+ +rogue/vertic-wall+)))
      ((= n (1+ horiz-door-line))
       (insert (if has-west-door +rogue/door-bottom+ +rogue/vertic-wall+))
-      (rogue/draw/dungeon-interior n monsters)
+      (rogue/draw/dungeon-interior n monsters objects)
       (insert (if has-east-door +rogue/door-bottom+ +rogue/vertic-wall+)))
      ;; Normal segment, no doors.
      (t (insert +rogue/vertic-wall+)
-        (rogue/draw/dungeon-interior n monsters)
+        (rogue/draw/dungeon-interior n monsters objects)
         (insert +rogue/vertic-wall+)))
     (newline)))
 
-(defun rogue/draw/dungeon-interior (n monsters)
+(defun rogue/draw/dungeon-interior (n monsters objects)
   "Draw line N of the inside of the current room.
 
-Place the player and MONSTERS where appropriate."
+Place the player as well as MONSTERS and OBJECTS where appropriate."
   (let ((y n)
         (room-dims (rogue/room/dims *rogue-current-room*)))
     (dotimes (k (- (rogue/dim/x room-dims)
                    2))
       (let* ((x (+ k 1))
              (pos (rogue/pos x y))
-             (m (rogue/monsters/monster-at pos monsters)))
+             (m (rogue/monsters/monster-at pos monsters))
+             (o (rogue/objects/object-at pos objects)))
         (cond
          ((equal pos *rogue-player-position*)
           (insert +rogue-player-symbol+))
          (m (insert (rogue/monster/symbol m)))
+         (o (insert (rogue/object/symbol o)))
          (t (insert +rogue/empty-tile+)))))))
 
 (defun rogue/draw/dungeon-wall-top (len has-door)
@@ -852,7 +855,7 @@ relevant variables."
   "Places in ROOM that are occupied by monsters or objects."
   ;; The center is always considered occupied.
   (cons (rogue/room/center room)
-        (append (mapcar #'rogue/object/position (rogue/room/objects room))
+        (append (mapcar #'rogue/object/pos (rogue/room/objects room))
                 (mapcar #'rogue/monster/pos (rogue/room/monsters room)))))
 
 (defun rogue/room/place-monsters (room monster-types)
@@ -900,6 +903,13 @@ At most one door is placed on each of the four walls."
 
 ;;; Objects ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defun rogue/objects/object-at (pos objects)
+  "Find, among OBJECTS, the object at POS, if any."
+  (seq-find (lambda (m)
+              (equal pos (rogue/object/pos m)))
+            objects
+            nil))
+
 (defun rogue/object/make (type position symbol &rest specifics)
   "Create an object of TYPE at POSITION, represented by SYMBOL.
 
@@ -910,7 +920,7 @@ SPECIFICS relating to its type can be given as well."
   "The type of OBJECT."
   (car object))
 
-(defun rogue/object/position (object)
+(defun rogue/object/pos (object)
   "The position of OBJECT."
   (cadr object))
 
@@ -928,7 +938,8 @@ SPECIFICS relating to its type can be given as well."
 
 (defun rogue/stairs/make (from-level to-level)
   "Create stairs between FROM-LEVEL and TO-LEVEL."
-  (let* ((symbol (if (< from-level to-level)
+  (let* ((symbol (if (> from-level to-level)
+                     ;; Levels are underground, higher numbers are down.
                      +rogue/stairs-up+
                    +rogue/stairs-down+)))
     (when (= from-level to-level)
