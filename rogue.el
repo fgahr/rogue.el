@@ -85,7 +85,7 @@
 
 ;; Level related
 
-(defconst +rogue-rooms-per-level+ 10 ;25
+(defconst +rogue-rooms-per-level+ 5 ;25
   "The number of rooms per level. Must be less than 100.")
 (defconst +rogue-num-levels+ 3
   "The number of levels in the game.")
@@ -211,9 +211,11 @@
 (defun rogue/player/move-done ()
   "The function to call after the player made their move."
   (rogue/monsters/move)
-  (if (rogue/player/monster-collision-p)
-      (rogue/fight/start)
-    (rogue/draw/dungeon)))
+  (cond ((rogue/player/monster-collision-p) (rogue/fight/start))
+        ((rogue/player/object-collision-p)
+         (let ((object (rogue/player/object-collision-p)))
+           (rogue/objects/interact object)))
+        (t (rogue/draw/dungeon))))
 
 (defun rogue/back-to-dungeon ()
   "Go back to dungeon view."
@@ -503,7 +505,7 @@ If HAS-DOOR is non-nil, add a door in its center."
        (not (rogue/player/door-collision-p))))
 
 (defun rogue/player/monster-collision-p ()
-  "Check whether the player collided with any monsters."
+  "Whether the player collided with any monsters."
   (let* ((monsters (rogue/room/monsters *rogue-current-room*))
          (at-player-pos
           (seq-filter
@@ -513,6 +515,11 @@ If HAS-DOOR is non-nil, add a door in its center."
            monsters)))
     (unless (null at-player-pos)
       (car at-player-pos))))
+
+(defun rogue/player/object-collision-p ()
+  "Whether the player collided with an object."
+  (let ((objects (rogue/room/objects *rogue-current-room*)))
+    (rogue/objects/object-at *rogue-player-position* objects)))
 
 (defun rogue/player/door-collision-p ()
   "Check whether the player collided with a door.
@@ -910,6 +917,13 @@ At most one door is placed on each of the four walls."
             objects
             nil))
 
+(defun rogue/objects/interact (object)
+  "Interact with OBJECT."
+  (cond ((rogue/object/stairs-p object)
+         (when (yes-or-no-p "Use stairs?")
+           (rogue/stairs/enter object)))
+        (t (error "Don't know how to interact with %S" object))))
+
 (defun rogue/object/make (type position symbol &rest specifics)
   "Create an object of TYPE at POSITION, represented by SYMBOL.
 
@@ -936,6 +950,10 @@ SPECIFICS relating to its type can be given as well."
   "Place OBJECT at POSITION."
   (setcar (cdr object) position))
 
+(defun rogue/object/stairs-p (object)
+  "Whether OBJECT is a staircase."
+  (eq (rogue/object/type object) 'STAIRS))
+
 (defun rogue/stairs/make (from-level to-level)
   "Create stairs between FROM-LEVEL and TO-LEVEL."
   (let* ((symbol (if (> from-level to-level)
@@ -956,7 +974,7 @@ SPECIFICS relating to its type can be given as well."
 
 (defun rogue/stairs/up-p (stairs)
   "Whether STAIRS lead up."
-  (< (rogue/stairs/from-level stairs)
+  (> (rogue/stairs/from-level stairs)
      (rogue/stairs/to-level stairs)))
 
 (defun rogue/stairs/enter (stairs)
@@ -970,7 +988,10 @@ SPECIFICS relating to its type can be given as well."
     (setq *rogue-current-room*
           (if (rogue/stairs/up-p stairs)
               (rogue/level/last-room target-level)
-            (rogue/level/first-room target-level)))))
+            (rogue/level/first-room target-level)))
+    (setq *rogue-player-position*
+          (rogue/room/center *rogue-current-room*)))
+  (rogue/player/move-done))
 
 ;;; Monsters ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
