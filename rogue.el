@@ -868,6 +868,65 @@ At most one door is placed on each of the four walls."
   "The target of DOOR."
   (cdr door))
 
+;;; Objects ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun rogue/object/make (type position symbol &rest specifics)
+  "Create an object of TYPE at POSITION, represented by SYMBOL.
+
+SPECIFICS relating to its type can be given as well."
+  `(,type ,position ,symbol ,@specifics))
+
+(defun rogue/object/type (object)
+  "The type of OBJECT."
+  (car object))
+
+(defun rogue/object/position (object)
+  "The position of OBJECT."
+  (cadr object))
+
+(defun rogue/object/symbol (object)
+  "The symbol to represent OBJECT."
+  (caddr object))
+
+(defun rogue/object/specifics (object)
+  "The specifics of OBJECT."
+  (cdddr object))
+
+(defun rogue/stairs/make (from-level to-level)
+  "Create stairs between FROM-LEVEL and TO-LEVEL."
+  (let* ((fnum (rogue/level/number from-level))
+         (tnum (rogue/level/number to-level))
+         (symbol (if (< fnum tnum) +rogue/stairs-up+ +rogue/stairs-down+)))
+    (when (= fnum tnum)
+      (error "Stairs must connect two distinct levels"))
+    (rogue/object/make 'STAIRS symbol fnum tnum)))
+
+(defun rogue/stairs/from-level (stairs)
+  "The origin level of STAIRS."
+  (car (rogue/object/specifics stairs)))
+
+(defun rogue/stairs/to-level (stairs)
+  "The target level of STAIRS."
+  (cadr (rogue/object/specifics stairs)))
+
+(defun rogue/stairs/up-p (stairs)
+  "Whether STAIRS lead up."
+  (< (rogue/stairs/from-level stairs)
+     (rogue/stairs/to-level stairs)))
+
+(defun rogue/stairs/enter (stairs)
+  "Enter STAIRS to get to another level."
+  (unless (= (rogue/stairs/from-level stairs)
+             (rogue/level/number *rogue-current-level*))
+    (error "Not in the right level to enter stairs: %S" stairs))
+  (let ((target-level (assoc (rogue/stairs/to-level stairs)
+                             *rogue-levels*)))
+    (setq *rogue-current-level* target-level)
+    (setq *rogue-current-room*
+          (if (rogue/stairs/up-p stairs)
+              (rogue/level/last-room target-level)
+            (rogue/level/first-room target-level)))))
+
 ;;; Monsters ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun rogue/monsters/roll-position (dimensions occupied)
@@ -1326,10 +1385,9 @@ must return a description of the spell's effects."
 (defun rogue/util/sign (number)
   "The sign of NUMBER.
 
--1 if NUMBER is negative, +1 if it is positive, and 0 if it is itself zero."
+Returns -1/+1/0 if the argument is negative/positive/zero."
   (cond ((> number 0) 1)
         ((< number 0) -1)
         (t 0)))
 
 ;;; rogue.el ends here
-(autoload 'name "srefactor-ui")
