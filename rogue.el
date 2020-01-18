@@ -304,11 +304,11 @@
 
 (defun rogue/draw/stat-header ()
   "Print a general stat header."
-  (insert (format "Level:      %d\n"
+  (insert (format "Level:   %d\n"
                   (rogue/level/number *rogue-current-level*)))
-  (insert (format "Room:       %d\n"
+  (insert (format "Room:    %d\n"
                   (rogue/room/number *rogue-current-room*)))
-  (insert (format "Hitpoints:  %d/%d\n\n"
+  (insert (format "Health:  %d/%d\n\n"
                   *rogue-player-current-hp*
                   *rogue-player-max-hp*))
   (insert (format "Weapon: %s\n"
