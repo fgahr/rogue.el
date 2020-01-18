@@ -22,13 +22,8 @@
 
 (defconst +rogue-player-symbol+ "@"
   "Representation of the player on the board.")
-
-;; General config
-
 (defconst +rogue-buffer-name+ "A simple roguelike"
   "The name of the game buffer.")
-
-;; Display
 
 (defconst +rogue/horizo-wall+ "━" "Horizontal wall segment.")
 (defconst +rogue/vertic-wall+ "┃" "Vertical wall segment.")
@@ -152,6 +147,7 @@
   (let ((map (make-sparse-keymap 'rogue/inventory-keymap)))
     (define-key map "e" #'rogue/inventory/equip-toggle)
     (define-key map "u" #'rogue/inventory/use-item)
+    (define-key map "d" #'rogue/inventory/drop-item)
     (define-key map "q" #'rogue/inventory/exit)
     (define-key map [down] #'rogue/inventory/select-next)
     (define-key map [up] #'rogue/inventory/select-previous)
@@ -159,7 +155,7 @@
 
 (defconst +rogue/inventory/usage+
   (concat "[up/down] change selection -- [e] toggle equip -- [u] consume item\n"
-          "[q] exit inventory\n"))
+          "[d] drop item -- [q] exit inventory\n"))
 
 (defconst rogue/magic-menu-keymap
   (let ((map (make-sparse-keymap 'rogue/magic-menu-keymap)))
@@ -577,10 +573,23 @@ Returns the corresponding door if one exists, nil otherwise."
   (rogue/message/clear)
   (rogue/back-to-dungeon))
 
+(defun rogue/inventory/selected-item ()
+  "The currently selected item."
+  (nth *rogue-inventory-selection* *rogue-player-inventory*))
+
+(defun rogue/inventory/discard-item (item)
+  "Discard ITEM from the inventory."
+  (setq *rogue-player-inventory*
+        (seq-remove (lambda (i) (eq i item))
+                    *rogue-player-inventory*))
+  (unless (= *rogue-inventory-selection* 0)
+    (setq *rogue-inventory-selection*
+          (1- *rogue-inventory-selection*))))
+
 (defun rogue/inventory/use-item ()
   "Equip the currently selected item if possible."
   (interactive)
-  (let ((item (nth *rogue-inventory-selection* *rogue-player-inventory*)))
+  (let ((item (rogue/inventory/selected-item)))
     (rogue/item/consume item))
   (rogue/draw/inventory))
 
@@ -591,6 +600,18 @@ Returns the corresponding door if one exists, nil otherwise."
     (if (rogue/item/equipped-p item)
         (rogue/item/unequip item)
       (rogue/item/equip item)))
+  (rogue/draw/inventory))
+
+(defun rogue/inventory/drop-item ()
+  "Drop the currently selected item.
+
+Equipped items will have to be unequipped first."
+  (interactive)
+  (let ((item (rogue/inventory/selected-item)))
+    (if (rogue/item/equipped-p item)
+        (error "Cannot drop %s, need to unequid first"
+               (rogue/item/name item))
+      (rogue/inventory/discard-item item)))
   (rogue/draw/inventory))
 
 (defun rogue/inventory/select-next ()
@@ -704,8 +725,7 @@ Format according to the format STRING using ARGS."
 (defun rogue/fight/loot ()
   "Look for loot among the remains of a slain monster."
   (rogue/draw/fight)
-  (rogue/notify "Press q to exit the fight screen")
-  'TODO)
+  (rogue/notify "Press q to exit the fight screen"))
 
 (defun rogue/fight/weapon-attack ()
   "Attack with the current weapon."
@@ -1210,12 +1230,8 @@ them is the responsibility of more specialized functions."
   (unless (rogue/item/consumable-p item)
     (error "Cannot consume %S" item))
   (rogue/message/set "%s" (funcall (car (rogue/item/specifics item))))
-  (setq *rogue-player-inventory*
-        (seq-remove (lambda (i) (eq i item))
-                    *rogue-player-inventory*))
-  (unless (= *rogue-inventory-selection* 0)
-    (setq *rogue-inventory-selection*
-          (1- *rogue-inventory-selection*))))
+  (rogue/inventory/discard-item item)
+  (rogue/draw/inventory))
 
 (defun rogue/item/equip (item)
   "Equip ITEM, either as a weapon or a piece of armor."
@@ -1450,8 +1466,8 @@ must return a description of the spell's effects."
 
 (defun rogue/pos/within-one (pos-a pos-b)
   "Whether positions POS-A and POS-B are in immediate proximity."
-  (let ((x-diff (rogue/util/abs (- (rogue/pos/x pos-a) (rogue/pos/x pos-b))))
-        (y-diff (rogue/util/abs (- (rogue/pos/y pos-a) (rogue/pos/y pos-b)))))
+  (let ((x-diff (abs (- (rogue/pos/x pos-a) (rogue/pos/x pos-b))))
+        (y-diff (abs (- (rogue/pos/y pos-a) (rogue/pos/y pos-b)))))
     (or (and (= x-diff 0) (<= y-diff 1))
         (and (= y-diff 0) (<= x-diff 1)))))
 
@@ -1539,12 +1555,6 @@ must return a description of the spell's effects."
    ((null sequences) nil)
    ((null (car sequences)) t)
    (t (rogue/util/any-null-p (cdr sequences)))))
-
-(defun rogue/util/abs (number)
-  "The absolute magnitude of NUMBER."
-  (if (< number 0)
-      (- number)
-    number))
 
 (defun rogue/util/sign (number)
   "The sign of NUMBER.
