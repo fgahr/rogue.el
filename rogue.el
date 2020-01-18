@@ -48,10 +48,15 @@
 
 ;; Player related
 
-(defvar *rogue-player-max-hp* 0
+(defvar *rogue-player-max-health* 0
   "The maximum hitpoints of the player.")
-(defvar *rogue-player-current-hp* 0
+(defvar *rogue-player-current-health* 0
   "The player's current hitpoints.")
+
+(defvar *rogue-player-max-mana* 0
+  "The maximum mana points of the player.")
+(defvar *rogue-player-current-mana* 0
+  "The player's current mana points.")
 
 (defvar *rogue-message* nil
   "The latest message for the player.")
@@ -73,7 +78,7 @@
   "The position of the currently selected spell.")
 
 (make-variable-buffer-local '*rogue-message*)
-(make-variable-buffer-local '*rogue-player-max-hp*)
+(make-variable-buffer-local '*rogue-player-max-health*)
 (make-variable-buffer-local '*rogue-player-position*)
 (make-variable-buffer-local '*rogue-player-armor*)
 (make-variable-buffer-local '*rogue-player-inventory*)
@@ -188,9 +193,11 @@
   (setq *rogue-current-level* (assoc 1 *rogue-levels*))
   (setq *rogue-current-room* (rogue/level/room *rogue-current-level* 101))
   (setq *rogue-player-position* (rogue/room/center *rogue-current-room*))
-  (setq *rogue-player-max-hp* 10)
+  (setq *rogue-player-max-health* 10)
+  (setq *rogue-player-current-health* *rogue-player-max-health*)
+  (setq *rogue-player-max-mana* 10)
+  (setq *rogue-player-current-mana* *rogue-player-max-mana*)
   (setq *rogue-message* "")
-  (setq *rogue-player-current-hp* *rogue-player-max-hp*)
   (setq *rogue-player-weapon* (rogue/weapon/get 'SWORD))
   (setq *rogue-player-armor* (list (rogue/armor/get 'SHIELD)))
   (setq *rogue-player-inventory*
@@ -304,13 +311,17 @@
 
 (defun rogue/draw/stat-header ()
   "Print a general stat header."
-  (insert (format "Level:   %d\n"
+  (insert (format "Level:  %d\n"
                   (rogue/level/number *rogue-current-level*)))
-  (insert (format "Room:    %d\n"
+  (insert (format "Room:   %d\n"
                   (rogue/room/number *rogue-current-room*)))
-  (insert (format "Health:  %d/%d\n\n"
-                  *rogue-player-current-hp*
-                  *rogue-player-max-hp*))
+  (insert (format "Health: %d/%d\n"
+                  *rogue-player-current-health*
+                  *rogue-player-max-health*))
+  (insert (format "Mana:   %d/%d\n"
+                  *rogue-player-current-mana*
+                  *rogue-player-max-mana*))
+  (newline)
   (insert (format "Weapon: %s\n"
                   (rogue/item/name *rogue-player-weapon*)))
   (insert "Armor: ")
@@ -410,12 +421,12 @@ If HAS-DOOR is non-nil, add a door in its center."
 
 (defun rogue/player/reduce-hp (amount)
   "Reduce the player's hitpoints by AMOUNT."
-  (setq *rogue-player-current-hp*
-        (- *rogue-player-current-hp* amount)))
+  (setq *rogue-player-current-health*
+        (- *rogue-player-current-health* amount)))
 
 (defun rogue/player/alive-p ()
   "Whether the player is currently alive."
-  (> *rogue-player-current-hp* 0))
+  (> *rogue-player-current-health* 0))
 
 ;;; Movement ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -1109,10 +1120,11 @@ A monster is represented by a structure as follows:
 (defun rogue/function/healer (amount)
   "Create a function that heals the player for AMOUNT when executed."
   (lambda ()
-    (let ((healed (min amount
-                       (- *rogue-player-max-hp*
-                          *rogue-player-current-hp*))))
-      (setq *rogue-player-current-hp* (+ *rogue-player-current-hp* healed))
+    (let ((healed
+           (min amount
+                (- *rogue-player-max-health* *rogue-player-current-health*))))
+      (setq *rogue-player-current-health*
+            (+ *rogue-player-current-health* healed))
       (format "You regain %d hitpoints" healed))))
 
 (defun rogue/function/not-in-combat ()
@@ -1280,12 +1292,12 @@ reduced resulting damage. Other actions can be executed as well."
 
 ;;; Spells ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun rogue/spell/make (name in-dungeon in-combat)
-  "Create spell NAME with actions to take when IN-DUNGEON or IN-COMBAT.
+(defun rogue/spell/make (name mana in-dungeon in-combat )
+  "Create spell with NAME and MANA cost, for actions IN-DUNGEON or IN-COMBAT.
 
 The latter two arguments need to be callable functions without arguments. They
 must return a description of the spell's effects."
-  (list name in-dungeon in-combat))
+  (list name mana in-dungeon in-combat))
 
 (defun rogue/spell/learn (spell)
   "Make SPELL available to the player."
@@ -1296,9 +1308,11 @@ must return a description of the spell's effects."
   (list
    ;; TODO: Make useful list of spells
    (rogue/spell/make 'HEAL
+                     2
                      (rogue/function/healer 3)
                      (rogue/function/healer 3))
    (rogue/spell/make 'LIGHTNING
+                     3
                      #'rogue/function/only-in-combat
                      (rogue/function/damage-dealer 4))))
 
@@ -1314,15 +1328,35 @@ must return a description of the spell's effects."
   "The name of SPELL."
   (car spell))
 
+(defun rogue/spell/mana-cost (spell)
+  "The mana cost of SPELL."
+  (cadr spell))
+
+(defun rogue/spell/ensure-enough-mana (spell)
+  "Raise an error unless the player has enough mana to cast SPELL."
+  (when (< *rogue-player-current-mana* (rogue/spell/mana-cost spell))
+    (error "Not enough mana to cast %s: %d required"
+           (rogue/spell/name spell)
+           (rogue/spell/mana-cost spell))))
+
+(defun rogue/spell/pay-mana-cost (spell)
+  "Pay the mana cost for SPELL, lowering the player's mana pool."
+  (setq *rogue-player-current-mana*
+        (- *rogue-player-current-mana* (rogue/spell/mana-cost spell))))
+
 (defun rogue/spell/cast-in-dungeon (spell)
   "Cast SPELL while exploring the dungeon."
-  (rogue/message/set "%s" (funcall (cadr spell))))
+  (rogue/spell/ensure-enough-mana spell)
+  (rogue/message/set "%s" (funcall (nth 2 spell)))
+  (rogue/spell/pay-mana-cost spell))
 
 (defun rogue/spell/cast-in-combat (spell)
   "Cast SPELL while in a fight."
+  (rogue/spell/ensure-enough-mana spell)
   (rogue/fight/add-to-log "You cast %s -- %s"
                           (rogue/spell/name spell)
-                          (funcall (caddr spell))))
+                          (funcall (nth 3 spell)))
+  (rogue/spell/pay-mana-cost spell))
 
 (defun rogue/spell/active-p (spell)
   "Whether SPELL is currently active."
