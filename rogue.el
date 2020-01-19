@@ -812,11 +812,11 @@ Format according to the format STRING using ARGS."
 (defun rogue/levels/make-all (num-levels)
   "Create NUM-LEVELS levels and connect them."
   (let ((levels (mapcar #'rogue/levels/make-one
-                        (rogue/util/range 1 num-levels))))
+                        (rogue/util/range 1 (1+ num-levels)))))
     (let* ((first-level (assoc 1 levels))
            (last-room (rogue/level/last-room first-level)))
       (rogue/room/place-object-center last-room (rogue/stairs/make 1 2)))
-    (dolist (lvl-num (rogue/util/range 2 +rogue-num-levels+))
+    (dolist (lvl-num (rogue/util/range 2 (1+ +rogue-num-levels+)))
       (let ((level (assoc lvl-num levels)))
         (rogue/room/place-object-center
          (rogue/level/first-room level)
