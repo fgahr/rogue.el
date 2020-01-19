@@ -1296,8 +1296,9 @@ them is the responsibility of more specialized functions."
 (defun rogue/weapon/get (name)
   "Get the weapon with the right NAME."
   (let* ((weapon-stats
-          (or (assoc name +rogue-all-weapons+)
-              '(FIST 1 1))))
+          (if (null name)
+              '(FIST 1 1)
+            (assoc name +rogue-all-weapons+))))
     (unless weapon-stats
       (error "Unknown weapon name '%s'. Available: %S"
              name
