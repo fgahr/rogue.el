@@ -85,7 +85,7 @@
 
 ;; Level related
 
-(defconst +rogue-rooms-per-level+ 5 ;25
+(defconst +rogue-rooms-per-level+ 25
   "The number of rooms per level. Must be less than 100.")
 (defconst +rogue-num-levels+ 3
   "The number of levels in the game.")
@@ -730,21 +730,22 @@ Format according to the format STRING using ARGS."
 
 (defun rogue/fight/loot ()
   "Look for loot among the remains of a slain monster."
-  (let* ((roll (random 10))
+  (let* ((roll (random 32))
          (item (cond ((< roll 1)
                       (apply #'rogue/weapon/make
                              (seq-random-elt +rogue-all-weapons+)))
                      ((< roll 2)
                       (apply #'rogue/armor/make
                              (seq-random-elt +rogue-all-armor+)))
-                     ((< roll 5)
+                     ((< roll 8)
                       (apply #'rogue/consumable/make
                              (seq-random-elt +rogue-all-consumables+)))
                      (t nil))))
     (when item
       (rogue/inventory/add-item item)
-      (rogue/fight/add-to-log "You found %s on the monster's corpse."
-                              (rogue/item/name item))))
+      (rogue/fight/add-to-log "You found %s among the remains of %s."
+                              (rogue/item/name item)
+                              (rogue/monster/type *rogue-current-monster*))))
   (rogue/draw/fight)
   (rogue/notify "Press q to exit the fight screen"))
 
@@ -775,12 +776,14 @@ Format according to the format STRING using ARGS."
   (interactive)
   (when (rogue/player/alive-p)
     (if *rogue-current-monster*
-        (if *rogue-player-spell*
-            (progn
-              (rogue/spell/cast-in-combat *rogue-player-spell*)
-              (rogue/draw/fight)
-              (rogue/fight/move-done))
-          (message "No spell selected"))
+        (if (rogue/monster/alive-p *rogue-current-monster*)
+            (if *rogue-player-spell*
+                (progn
+                  (rogue/spell/cast-in-combat *rogue-player-spell*)
+                  (rogue/draw/fight)
+                  (rogue/fight/move-done))
+              (message "No spell selected"))
+          (rogue/notify "The monster is already dead"))
       (error "Not in a fight"))))
 
 (defun rogue/fight/monster-attack ()
@@ -792,14 +795,17 @@ Format according to the format STRING using ARGS."
     (rogue/fight/add-to-log "%s hit you for %d damage."
                             (rogue/monster/type *rogue-current-monster*)
                             dmg)
-    (if (not (rogue/player/alive-p))
-        (progn
-          (rogue/fight/add-to-log "You have died.")
-          (rogue/draw/fight)
-          (if (yes-or-no-p "Play again?")
-              (rogue)
-            (kill-buffer +rogue-buffer-name+)))
-      (rogue/draw/fight))))
+    (cond ((not (rogue/player/alive-p))
+           (rogue/fight/add-to-log "You have died.")
+           (rogue/draw/fight)
+           (if (yes-or-no-p "Play again?")
+               (rogue)
+             (kill-buffer +rogue-buffer-name+)))
+          ((not (rogue/monster/alive-p *rogue-current-monster*))
+           (rogue/fight/add-to-log "%s has died."
+                                   (rogue/monster/type *rogue-current-monster*))
+           (rogue/fight/loot))
+          (t (rogue/draw/fight)))))
 
 ;;; Levels ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -1342,7 +1348,12 @@ reduced resulting damage. Other actions can be executed as well."
 
 (defvar +rogue-all-armor+
   (list
-   `(SHIELD ,(rogue/armor/damage-reducer 1))
+   `(SHIELD ,(lambda (damage)
+               (if (> (random 2) 0)
+                   damage
+                 (progn
+                   (rogue/fight/add-to-log "You block the attack.")
+                   0))))
    `(BLADE-MAIL
     ,(lambda (damage)
        (let ((returned 1))
