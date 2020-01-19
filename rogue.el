@@ -22,13 +22,8 @@
 
 (defconst +rogue-player-symbol+ "@"
   "Representation of the player on the board.")
-
-;; General config
-
 (defconst +rogue-buffer-name+ "A simple roguelike"
   "The name of the game buffer.")
-
-;; Display
 
 (defconst +rogue/horizo-wall+ "━" "Horizontal wall segment.")
 (defconst +rogue/vertic-wall+ "┃" "Vertical wall segment.")
@@ -48,10 +43,15 @@
 
 ;; Player related
 
-(defvar *rogue-player-max-hp* 0
+(defvar *rogue-player-max-health* 0
   "The maximum hitpoints of the player.")
-(defvar *rogue-player-current-hp* 0
+(defvar *rogue-player-current-health* 0
   "The player's current hitpoints.")
+
+(defvar *rogue-player-max-mana* 0
+  "The maximum mana points of the player.")
+(defvar *rogue-player-current-mana* 0
+  "The player's current mana points.")
 
 (defvar *rogue-message* nil
   "The latest message for the player.")
@@ -73,7 +73,7 @@
   "The position of the currently selected spell.")
 
 (make-variable-buffer-local '*rogue-message*)
-(make-variable-buffer-local '*rogue-player-max-hp*)
+(make-variable-buffer-local '*rogue-player-max-health*)
 (make-variable-buffer-local '*rogue-player-position*)
 (make-variable-buffer-local '*rogue-player-armor*)
 (make-variable-buffer-local '*rogue-player-inventory*)
@@ -146,13 +146,16 @@
 (defconst rogue/inventory-keymap
   (let ((map (make-sparse-keymap 'rogue/inventory-keymap)))
     (define-key map "e" #'rogue/inventory/equip-toggle)
+    (define-key map "u" #'rogue/inventory/use-item)
+    (define-key map "d" #'rogue/inventory/drop-item)
     (define-key map "q" #'rogue/inventory/exit)
     (define-key map [down] #'rogue/inventory/select-next)
     (define-key map [up] #'rogue/inventory/select-previous)
     map))
 
 (defconst +rogue/inventory/usage+
-  "[up/down] change selection -- [e] toggle equip -- [q] exit inventory\n")
+  (concat "[up/down] change selection -- [e] toggle equip -- [u] consume item\n"
+          "[d] drop item -- [q] exit inventory\n"))
 
 (defconst rogue/magic-menu-keymap
   (let ((map (make-sparse-keymap 'rogue/magic-menu-keymap)))
@@ -188,13 +191,18 @@
   (setq *rogue-current-level* (assoc 1 *rogue-levels*))
   (setq *rogue-current-room* (rogue/level/room *rogue-current-level* 101))
   (setq *rogue-player-position* (rogue/room/center *rogue-current-room*))
-  (setq *rogue-player-max-hp* 10)
+  (setq *rogue-player-max-health* 10)
+  (setq *rogue-player-current-health* *rogue-player-max-health*)
+  (setq *rogue-player-max-mana* 10)
+  (setq *rogue-player-current-mana* *rogue-player-max-mana*)
   (setq *rogue-message* "")
-  (setq *rogue-player-current-hp* *rogue-player-max-hp*)
   (setq *rogue-player-weapon* (rogue/weapon/get 'SWORD))
   (setq *rogue-player-armor* (list (rogue/armor/get 'SHIELD)))
   (setq *rogue-player-inventory*
-        (cons *rogue-player-weapon* *rogue-player-armor*))
+        `(,*rogue-player-weapon*
+          ,(rogue/consumable/get 'HEALTH-POTION)
+          ,(rogue/consumable/get 'MANA-POTION)
+          ,@*rogue-player-armor*))
   (setq *rogue-player-spell* (rogue/spell/get 'HEAL))
   (setq *rogue-player-available-spells*
         (list *rogue-player-spell* (rogue/spell/get 'LIGHTNING)))
@@ -267,6 +275,8 @@
        (insert (format "%s\n" (rogue/item/name item)))
        (setq counter (1+ counter))))
    (newline)
+   (insert *rogue-message*)
+   (newline)
    (insert +rogue/inventory/usage+)))
 
 (defun rogue/draw/magic-menu ()
@@ -304,13 +314,17 @@
 
 (defun rogue/draw/stat-header ()
   "Print a general stat header."
-  (insert (format "Level:   %d\n"
+  (insert (format "Level:  %d\n"
                   (rogue/level/number *rogue-current-level*)))
-  (insert (format "Room:    %d\n"
+  (insert (format "Room:   %d\n"
                   (rogue/room/number *rogue-current-room*)))
-  (insert (format "Health:  %d/%d\n\n"
-                  *rogue-player-current-hp*
-                  *rogue-player-max-hp*))
+  (insert (format "Health: %d/%d\n"
+                  *rogue-player-current-health*
+                  *rogue-player-max-health*))
+  (insert (format "Mana:   %d/%d\n"
+                  *rogue-player-current-mana*
+                  *rogue-player-max-mana*))
+  (newline)
   (insert (format "Weapon: %s\n"
                   (rogue/item/name *rogue-player-weapon*)))
   (insert "Armor: ")
@@ -410,12 +424,12 @@ If HAS-DOOR is non-nil, add a door in its center."
 
 (defun rogue/player/reduce-hp (amount)
   "Reduce the player's hitpoints by AMOUNT."
-  (setq *rogue-player-current-hp*
-        (- *rogue-player-current-hp* amount)))
+  (setq *rogue-player-current-health*
+        (- *rogue-player-current-health* amount)))
 
 (defun rogue/player/alive-p ()
   "Whether the player is currently alive."
-  (> *rogue-player-current-hp* 0))
+  (> *rogue-player-current-health* 0))
 
 ;;; Movement ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -455,7 +469,7 @@ If HAS-DOOR is non-nil, add a door in its center."
       (setq *rogue-player-position* old-pos)
       (rogue/message/set "Ouch!")
       (rogue/draw/dungeon))
-     (t (rogue/message/set "")
+     (t (rogue/message/clear)
         (rogue/player/check-collisions)))))
 
 (defun rogue/player/move-left ()
@@ -550,12 +564,40 @@ Returns the corresponding door if one exists, nil otherwise."
   (interactive)
   (use-local-map rogue/inventory-keymap)
   (setq *rogue-inventory-selection* 0)
+  (rogue/message/clear)
   (rogue/draw/inventory))
 
 (defun rogue/inventory/exit ()
   "Exit the inventory screen."
   (interactive)
+  (rogue/message/clear)
   (rogue/back-to-dungeon))
+
+(defun rogue/inventory/selected-item ()
+  "The currently selected item."
+  (nth *rogue-inventory-selection* *rogue-player-inventory*))
+
+(defun rogue/inventory/add-item (item)
+  "Add ITEM to the inventory."
+  (push item *rogue-player-inventory*))
+
+(defun rogue/inventory/discard-selected-item ()
+  "Discard ITEM from the inventory."
+  (setq *rogue-player-inventory*
+        (append (seq-take *rogue-player-inventory*
+                          *rogue-inventory-selection*)
+                (seq-drop *rogue-player-inventory*
+                          (1+ *rogue-inventory-selection*))))
+  (unless (= *rogue-inventory-selection* 0)
+    (setq *rogue-inventory-selection*
+          (1- *rogue-inventory-selection*))))
+
+(defun rogue/inventory/use-item ()
+  "Equip the currently selected item if possible."
+  (interactive)
+  (let ((item (rogue/inventory/selected-item)))
+    (rogue/item/consume item))
+  (rogue/draw/inventory))
 
 (defun rogue/inventory/equip-toggle ()
   "Equip the currently selected item if possible."
@@ -564,6 +606,18 @@ Returns the corresponding door if one exists, nil otherwise."
     (if (rogue/item/equipped-p item)
         (rogue/item/unequip item)
       (rogue/item/equip item)))
+  (rogue/draw/inventory))
+
+(defun rogue/inventory/drop-item ()
+  "Drop the currently selected item.
+
+Equipped items will have to be unequipped first."
+  (interactive)
+  (let ((item (rogue/inventory/selected-item)))
+    (if (rogue/item/equipped-p item)
+        (error "Cannot drop %s, need to unequid first"
+               (rogue/item/name item))
+      (rogue/inventory/discard-selected-item)))
   (rogue/draw/inventory))
 
 (defun rogue/inventory/select-next ()
@@ -676,10 +730,23 @@ Format according to the format STRING using ARGS."
 
 (defun rogue/fight/loot ()
   "Look for loot among the remains of a slain monster."
+  (let* ((roll (random 10))
+         (item (cond ((< roll 1)
+                      (apply #'rogue/weapon/make
+                             (seq-random-elt +rogue-all-weapons+)))
+                     ((< roll 2)
+                      (apply #'rogue/armor/make
+                             (seq-random-elt +rogue-all-armor+)))
+                     ((< roll 5)
+                      (apply #'rogue/consumable/make
+                             (seq-random-elt +rogue-all-consumables+)))
+                     (t nil))))
+    (when item
+      (rogue/inventory/add-item item)
+      (rogue/fight/add-to-log "You found %s on the monster's corpse."
+                              (rogue/item/name item))))
   (rogue/draw/fight)
-  (rogue/notify "Press q to exit the fight screen")
-  ;; TODO
-  nil)
+  (rogue/notify "Press q to exit the fight screen"))
 
 (defun rogue/fight/weapon-attack ()
   "Attack with the current weapon."
@@ -1102,18 +1169,33 @@ A monster is represented by a structure as follows:
   "Set the current message for the player, format based on STRING using ARGS."
   (setq *rogue-message* (apply #'format string args)))
 
+(defun rogue/message/clear ()
+  "Set the current message for the player, format based on STRING using ARGS."
+  (rogue/message/set ""))
+
 (defun rogue/notify (string &rest args)
   "Show a notification for the player, format based on STRING using ARGS."
   (message (apply #'format string args)))
 
 (defun rogue/function/healer (amount)
-  "Create a function that heals the player for AMOUNT when executed."
+  "Create a function that heals the player for AMOUNT when called."
   (lambda ()
-    (let ((healed (min amount
-                       (- *rogue-player-max-hp*
-                          *rogue-player-current-hp*))))
-      (setq *rogue-player-current-hp* (+ *rogue-player-current-hp* healed))
+    (let ((healed
+           (min amount
+                (- *rogue-player-max-health* *rogue-player-current-health*))))
+      (setq *rogue-player-current-health*
+            (+ *rogue-player-current-health* healed))
       (format "You regain %d hitpoints" healed))))
+
+(defun rogue/function/manarest (amount)
+  "Create a function that restores the player's mana for AMOUNT when called."
+  (lambda ()
+    (let ((restored
+           (min amount
+                (- *rogue-player-max-mana* *rogue-player-current-mana*))))
+      (setq *rogue-player-current-mana*
+            (+ *rogue-player-current-mana* restored))
+      (format "You regain %d mana" restored))))
 
 (defun rogue/function/not-in-combat ()
   "Function for an action unavailable in a fight."
@@ -1152,6 +1234,26 @@ them is the responsibility of more specialized functions."
       'NOTHING
     (cadr item)))
 
+(defun rogue/item/weapon-p (item)
+  "Whether ITEM is a weapon."
+  (eq (rogue/item/type item) 'WEAPON))
+
+(defun rogue/item/armor-p (item)
+  "Whether ITEM is a piece of armor."
+  (eq (rogue/item/type item) 'ARMOR))
+
+(defun rogue/item/consumable-p (item)
+  "whether ITEM is consumable."
+  (eq (rogue/item/type item) 'CONSUMABLE))
+
+(defun rogue/item/consume (item)
+  "Consume a consumable ITEM."
+  (unless (rogue/item/consumable-p item)
+    (error "Cannot consume %S" item))
+  (rogue/message/set "%s" (funcall (car (rogue/item/specifics item))))
+  (rogue/inventory/discard-selected-item)
+  (rogue/draw/inventory))
+
 (defun rogue/item/equip (item)
   "Equip ITEM, either as a weapon or a piece of armor."
   (cond ((rogue/item/weapon-p item) (setq *rogue-player-weapon* item))
@@ -1183,31 +1285,24 @@ them is the responsibility of more specialized functions."
   "Create a weapon with a NAME as well as MIN-DMG and MAX-DMG values."
   (rogue/item/make 'WEAPON name min-dmg max-dmg))
 
-(defun rogue/item/weapon-p (item)
-  "Whether ITEM is a weapon."
-  (eq (rogue/item/type item) 'WEAPON))
-
 (defvar +rogue-all-weapons+
-  (list
-   ;; TODO: Make useful list of weapons.
-   (rogue/weapon/make 'SWORD 2 4)
-   (rogue/weapon/make 'CLUB 3 3)
-   (rogue/weapon/make 'SPOON 1 2)))
+  ;; TODO: Make useful list of weapons.
+  '((SWORD 2 4)
+    (CLUB 3 3)
+    (SPOON 1 2)))
 
 (make-variable-buffer-local '+rogue-all-weapons+)
 
 (defun rogue/weapon/get (name)
   "Get the weapon with the right NAME."
-  (let ((weapon
-         (if (null name)
-             (rogue/weapon/make 'FIST 1 1)
-           (seq-find (lambda (wpn)
-                       (eq name (rogue/item/name wpn)))
-                     +rogue-all-weapons+))))
-    (or weapon
-        (error "Unknown weapon name '%s'. Available: %S"
-               name
-               +rogue-all-weapons+))))
+  (let* ((weapon-stats
+          (or (assoc name +rogue-all-weapons+)
+              '(FIST 1 1))))
+    (unless weapon-stats
+      (error "Unknown weapon name '%s'. Available: %S"
+             name
+             (mapcar #'car +rogue-all-weapons+)))
+    (apply #'rogue/weapon/make weapon-stats)))
 
 (defun rogue/weapon/dmg (weapon)
   "The damage for the next attack with WEAPON."
@@ -1240,37 +1335,31 @@ The ON-ATTACKED function takes an initial damage and returns the possibly
 reduced resulting damage. Other actions can be executed as well."
   (rogue/item/make 'ARMOR name on-attacked))
 
-(defun rogue/item/armor-p (item)
-  "Whether ITEM is a piece of armor."
-  (eq (rogue/item/type item) 'ARMOR))
-
 (defun rogue/armor/damage-reducer (amount)
   "Reduce incoming damage by AMOUNT."
   (lambda (damage) (max 0 (- damage amount))))
 
 (defvar +rogue-all-armor+
   (list
-   (rogue/armor/make 'SHIELD (rogue/armor/damage-reducer 1))
-   (rogue/armor/make
-    'BLADE-MAIL
-    (lambda (damage)
-      (let ((returned 1))
-        (rogue/monster/reduce-hp *rogue-current-monster* returned)
-        (rogue/fight/add-to-log "%s takes %d damage"
-                                (rogue/monster/type *rogue-current-monster*)
-                                returned))
-      (max 0 (- damage 2))))))
+   `(SHIELD ,(rogue/armor/damage-reducer 1))
+   `(BLADE-MAIL
+    ,(lambda (damage)
+       (let ((returned 1))
+         (rogue/monster/reduce-hp *rogue-current-monster* returned)
+         (rogue/fight/add-to-log "%s takes %d damage"
+                                 (rogue/monster/type *rogue-current-monster*)
+                                 returned))
+       (max 0 (- damage 2))))))
 
 (make-variable-buffer-local '+rogue-all-armor+)
 
 (defun rogue/armor/get (name)
   "Get the armor item with the right NAME."
-  (let ((armor
-         (seq-find (lambda (arm)
-                     (eq name (rogue/item/name arm)))
-                   +rogue-all-armor+)))
-    (or armor
-        (error "Unknown armor name '%s'" name))))
+  (let ((armor-stats
+         (assoc name +rogue-all-armor+)))
+    (unless armor-stats
+      (error "Unknown armor name '%s'" name))
+    (apply #'rogue/armor/make armor-stats)))
 
 (defun rogue/armor/take-damage (armor damage)
   "Make use of ARMOR item when DAMAGE is taken."
@@ -1278,14 +1367,35 @@ reduced resulting damage. Other actions can be executed as well."
     (error "Item is not a weapon: %S" armor))
   (funcall (car (rogue/item/specifics armor)) damage))
 
+;;; Consumables ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun rogue/consumable/make (name on-consume)
+  "Create a consumable item with the given NAME and an ON-CONSUME function."
+  (rogue/item/make 'CONSUMABLE name on-consume))
+
+(defvar +rogue-all-consumables+
+  (list
+   `(HEALTH-POTION ,(rogue/function/healer 2))
+   `(MANA-POTION ,(rogue/function/manarest 4))))
+
+(make-variable-buffer-local '+rogue-all-consumables+)
+
+(defun rogue/consumable/get (name)
+  "Get the armor item with the right NAME."
+  (let ((consumable-stats
+         (assoc name +rogue-all-consumables+)))
+    (unless consumable-stats
+      (error "Unknown consumable name '%s'" name))
+    (apply #'rogue/consumable/make consumable-stats)))
+
 ;;; Spells ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun rogue/spell/make (name in-dungeon in-combat)
-  "Create spell NAME with actions to take when IN-DUNGEON or IN-COMBAT.
+(defun rogue/spell/make (name mana in-dungeon in-combat )
+  "Create spell with NAME and MANA cost, for actions IN-DUNGEON or IN-COMBAT.
 
 The latter two arguments need to be callable functions without arguments. They
 must return a description of the spell's effects."
-  (list name in-dungeon in-combat))
+  (list name mana in-dungeon in-combat))
 
 (defun rogue/spell/learn (spell)
   "Make SPELL available to the player."
@@ -1296,9 +1406,11 @@ must return a description of the spell's effects."
   (list
    ;; TODO: Make useful list of spells
    (rogue/spell/make 'HEAL
+                     2
                      (rogue/function/healer 3)
                      (rogue/function/healer 3))
    (rogue/spell/make 'LIGHTNING
+                     3
                      #'rogue/function/only-in-combat
                      (rogue/function/damage-dealer 4))))
 
@@ -1314,15 +1426,35 @@ must return a description of the spell's effects."
   "The name of SPELL."
   (car spell))
 
+(defun rogue/spell/mana-cost (spell)
+  "The mana cost of SPELL."
+  (cadr spell))
+
+(defun rogue/spell/ensure-enough-mana (spell)
+  "Raise an error unless the player has enough mana to cast SPELL."
+  (when (< *rogue-player-current-mana* (rogue/spell/mana-cost spell))
+    (error "Not enough mana to cast %s: %d required"
+           (rogue/spell/name spell)
+           (rogue/spell/mana-cost spell))))
+
+(defun rogue/spell/pay-mana-cost (spell)
+  "Pay the mana cost for SPELL, lowering the player's mana pool."
+  (setq *rogue-player-current-mana*
+        (- *rogue-player-current-mana* (rogue/spell/mana-cost spell))))
+
 (defun rogue/spell/cast-in-dungeon (spell)
   "Cast SPELL while exploring the dungeon."
-  (rogue/message/set "%s" (funcall (cadr spell))))
+  (rogue/spell/ensure-enough-mana spell)
+  (rogue/message/set "%s" (funcall (nth 2 spell)))
+  (rogue/spell/pay-mana-cost spell))
 
 (defun rogue/spell/cast-in-combat (spell)
   "Cast SPELL while in a fight."
+  (rogue/spell/ensure-enough-mana spell)
   (rogue/fight/add-to-log "You cast %s -- %s"
                           (rogue/spell/name spell)
-                          (funcall (caddr spell))))
+                          (funcall (nth 3 spell)))
+  (rogue/spell/pay-mana-cost spell))
 
 (defun rogue/spell/active-p (spell)
   "Whether SPELL is currently active."
@@ -1349,8 +1481,8 @@ must return a description of the spell's effects."
 
 (defun rogue/pos/within-one (pos-a pos-b)
   "Whether positions POS-A and POS-B are in immediate proximity."
-  (let ((x-diff (rogue/util/abs (- (rogue/pos/x pos-a) (rogue/pos/x pos-b))))
-        (y-diff (rogue/util/abs (- (rogue/pos/y pos-a) (rogue/pos/y pos-b)))))
+  (let ((x-diff (abs (- (rogue/pos/x pos-a) (rogue/pos/x pos-b))))
+        (y-diff (abs (- (rogue/pos/y pos-a) (rogue/pos/y pos-b)))))
     (or (and (= x-diff 0) (<= y-diff 1))
         (and (= y-diff 0) (<= x-diff 1)))))
 
@@ -1438,12 +1570,6 @@ must return a description of the spell's effects."
    ((null sequences) nil)
    ((null (car sequences)) t)
    (t (rogue/util/any-null-p (cdr sequences)))))
-
-(defun rogue/util/abs (number)
-  "The absolute magnitude of NUMBER."
-  (if (< number 0)
-      (- number)
-    number))
 
 (defun rogue/util/sign (number)
   "The sign of NUMBER.
