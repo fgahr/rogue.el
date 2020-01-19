@@ -577,11 +577,17 @@ Returns the corresponding door if one exists, nil otherwise."
   "The currently selected item."
   (nth *rogue-inventory-selection* *rogue-player-inventory*))
 
-(defun rogue/inventory/discard-item (item)
+(defun rogue/inventory/add-item (item)
+  "Add ITEM to the inventory."
+  (push item *rogue-player-inventory*))
+
+(defun rogue/inventory/discard-selected-item ()
   "Discard ITEM from the inventory."
   (setq *rogue-player-inventory*
-        (seq-remove (lambda (i) (eq i item))
-                    *rogue-player-inventory*))
+        (append (seq-take *rogue-player-inventory*
+                          *rogue-inventory-selection*)
+                (seq-drop *rogue-player-inventory*
+                          (1+ *rogue-inventory-selection*))))
   (unless (= *rogue-inventory-selection* 0)
     (setq *rogue-inventory-selection*
           (1- *rogue-inventory-selection*))))
@@ -611,7 +617,7 @@ Equipped items will have to be unequipped first."
     (if (rogue/item/equipped-p item)
         (error "Cannot drop %s, need to unequid first"
                (rogue/item/name item))
-      (rogue/inventory/discard-item item)))
+      (rogue/inventory/discard-selected-item)))
   (rogue/draw/inventory))
 
 (defun rogue/inventory/select-next ()
@@ -724,6 +730,21 @@ Format according to the format STRING using ARGS."
 
 (defun rogue/fight/loot ()
   "Look for loot among the remains of a slain monster."
+  (let* ((roll (random 10))
+         (item (cond ((< roll 1)
+                      (apply #'rogue/weapon/make
+                             (seq-random-elt +rogue-all-weapons+)))
+                     ((< roll 2)
+                      (apply #'rogue/armor/make
+                             (seq-random-elt +rogue-all-armor+)))
+                     ((< roll 5)
+                      (apply #'rogue/consumable/make
+                             (seq-random-elt +rogue-all-consumables+)))
+                     (t nil))))
+    (when item
+      (rogue/inventory/add-item item)
+      (rogue/fight/add-to-log "You found %s on the monster's corpse."
+                              (rogue/item/name item))))
   (rogue/draw/fight)
   (rogue/notify "Press q to exit the fight screen"))
 
@@ -1230,7 +1251,7 @@ them is the responsibility of more specialized functions."
   (unless (rogue/item/consumable-p item)
     (error "Cannot consume %S" item))
   (rogue/message/set "%s" (funcall (car (rogue/item/specifics item))))
-  (rogue/inventory/discard-item item)
+  (rogue/inventory/discard-selected-item)
   (rogue/draw/inventory))
 
 (defun rogue/item/equip (item)
@@ -1265,26 +1286,23 @@ them is the responsibility of more specialized functions."
   (rogue/item/make 'WEAPON name min-dmg max-dmg))
 
 (defvar +rogue-all-weapons+
-  (list
-   ;; TODO: Make useful list of weapons.
-   (rogue/weapon/make 'SWORD 2 4)
-   (rogue/weapon/make 'CLUB 3 3)
-   (rogue/weapon/make 'SPOON 1 2)))
+  ;; TODO: Make useful list of weapons.
+  '((SWORD 2 4)
+    (CLUB 3 3)
+    (SPOON 1 2)))
 
 (make-variable-buffer-local '+rogue-all-weapons+)
 
 (defun rogue/weapon/get (name)
   "Get the weapon with the right NAME."
-  (let ((weapon
-         (if (null name)
-             (rogue/weapon/make 'FIST 1 1)
-           (seq-find (lambda (wpn)
-                       (eq name (rogue/item/name wpn)))
-                     +rogue-all-weapons+))))
-    (or weapon
-        (error "Unknown weapon name '%s'. Available: %S"
-               name
-               +rogue-all-weapons+))))
+  (let* ((weapon-stats
+          (or (assoc name +rogue-all-weapons+)
+              '(FIST 1 1))))
+    (unless weapon-stats
+      (error "Unknown weapon name '%s'. Available: %S"
+             name
+             (mapcar #'car +rogue-all-weapons+)))
+    (apply #'rogue/weapon/make weapon-stats)))
 
 (defun rogue/weapon/dmg (weapon)
   "The damage for the next attack with WEAPON."
@@ -1323,27 +1341,25 @@ reduced resulting damage. Other actions can be executed as well."
 
 (defvar +rogue-all-armor+
   (list
-   (rogue/armor/make 'SHIELD (rogue/armor/damage-reducer 1))
-   (rogue/armor/make
-    'BLADE-MAIL
-    (lambda (damage)
-      (let ((returned 1))
-        (rogue/monster/reduce-hp *rogue-current-monster* returned)
-        (rogue/fight/add-to-log "%s takes %d damage"
-                                (rogue/monster/type *rogue-current-monster*)
-                                returned))
-      (max 0 (- damage 2))))))
+   `(SHIELD ,(rogue/armor/damage-reducer 1))
+   `(BLADE-MAIL
+    ,(lambda (damage)
+       (let ((returned 1))
+         (rogue/monster/reduce-hp *rogue-current-monster* returned)
+         (rogue/fight/add-to-log "%s takes %d damage"
+                                 (rogue/monster/type *rogue-current-monster*)
+                                 returned))
+       (max 0 (- damage 2))))))
 
 (make-variable-buffer-local '+rogue-all-armor+)
 
 (defun rogue/armor/get (name)
   "Get the armor item with the right NAME."
-  (let ((armor
-         (seq-find (lambda (arm)
-                     (eq name (rogue/item/name arm)))
-                   +rogue-all-armor+)))
-    (or armor
-        (error "Unknown armor name '%s'" name))))
+  (let ((armor-stats
+         (assoc name +rogue-all-armor+)))
+    (unless armor-stats
+      (error "Unknown armor name '%s'" name))
+    (apply #'rogue/armor/make armor-stats)))
 
 (defun rogue/armor/take-damage (armor damage)
   "Make use of ARMOR item when DAMAGE is taken."
@@ -1359,19 +1375,18 @@ reduced resulting damage. Other actions can be executed as well."
 
 (defvar +rogue-all-consumables+
   (list
-   (rogue/consumable/make 'HEALTH-POTION (rogue/function/healer 2))
-   (rogue/consumable/make 'MANA-POTION (rogue/function/manarest 4))))
+   `(HEALTH-POTION ,(rogue/function/healer 2))
+   `(MANA-POTION ,(rogue/function/manarest 4))))
 
 (make-variable-buffer-local '+rogue-all-consumables+)
 
 (defun rogue/consumable/get (name)
   "Get the armor item with the right NAME."
-  (let ((consumable
-         (seq-find (lambda (con)
-                     (eq name (rogue/item/name con)))
-                   +rogue-all-consumables+)))
-    (or consumable
-        (error "Unknown consumable name '%s'" name))))
+  (let ((consumable-stats
+         (assoc name +rogue-all-consumables+)))
+    (unless consumable-stats
+      (error "Unknown consumable name '%s'" name))
+    (apply #'rogue/consumable/make consumable-stats)))
 
 ;;; Spells ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
