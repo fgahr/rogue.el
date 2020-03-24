@@ -110,6 +110,35 @@
 (defvar *rogue-current-monster* nil "The monster currently in battle.")
 (defvar *rogue-fight-log* nil "The log of the current fight's events.")
 
+(defconst +rogue-all-weapons+
+  ;; TODO: Make useful list of weapons.
+  '((SWORD 2 4)
+    (CLUB 3 3)
+    (SPOON 1 2)))
+
+(defconst +rogue-all-armor+
+  (list
+   `(BUCKLER ,(rogue/armor/damage-blocker 40))
+   `(KITE-SHIELD ,(rogue/armor/damage-blocker 50))
+   `(TOWER-SHIELD ,(rogue/armor/damage-blocker 65))
+   `(BLADE-MAIL
+    ,(lambda (damage)
+       (let ((returned 1))
+         (rogue/monster/reduce-hp *rogue-current-monster* returned)
+         (rogue/fight/add-to-log "%s takes %d damage"
+                                 (rogue/monster/type *rogue-current-monster*)
+                                 returned))
+       (max 0 (- damage 2))))))
+
+(defconst +rogue-all-consumables+
+  (list
+   `(HEALTH-POTION ,(rogue/function/healer 2))
+   `(MANA-POTION ,(rogue/function/manarest 4))))
+
+(make-variable-buffer-local '+rogue-all-consumables+)
+(make-variable-buffer-local '+rogue-all-armor+)
+(make-variable-buffer-local '+rogue-all-weapons+)
+
 ;;; Keymaps ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defconst rogue/dungeon-keymap
@@ -197,7 +226,7 @@
   (setq *rogue-player-current-mana* *rogue-player-max-mana*)
   (setq *rogue-message* "")
   (setq *rogue-player-weapon* (rogue/weapon/get 'SWORD))
-  (setq *rogue-player-armor* (list (rogue/armor/get 'SHIELD)))
+  (setq *rogue-player-armor* `((SHIELD ,(rogue/armor/get 'BUCKLER))))
   (setq *rogue-player-inventory*
         `(,*rogue-player-weapon*
           ,(rogue/consumable/get 'HEALTH-POTION)
@@ -831,8 +860,7 @@ Format according to the format STRING using ARGS."
   (let* ((room-numbers
           (mapcar (lambda (x) (+ x (* 100 level-number)))
                   (rogue/util/range 1 (1+ +rogue-rooms-per-level+))))
-         (shuffled (rogue/util/shuffle-list room-numbers))
-         (partitioned (rogue/util/sublists 2 3 shuffled))
+         (partitioned (rogue/util/sublists 2 3 (rogue/util/shuffle-list room-numbers)))
          (rooms-unsorted
           (cons (rogue/room/make
                  (caar partitioned)
@@ -1194,7 +1222,7 @@ A monster is represented by a structure as follows:
       (format "You regain %d hitpoints" healed))))
 
 (defun rogue/function/manarest (amount)
-  "Create a function that restores the player's mana for AMOUNT when called."
+  "Create a function to restore the player's mana for AMOUNT when called."
   (lambda ()
     (let ((restored
            (min amount
@@ -1249,7 +1277,7 @@ them is the responsibility of more specialized functions."
   (eq (rogue/item/type item) 'ARMOR))
 
 (defun rogue/item/consumable-p (item)
-  "whether ITEM is consumable."
+  "Whether ITEM is consumable."
   (eq (rogue/item/type item) 'CONSUMABLE))
 
 (defun rogue/item/consume (item)
@@ -1290,14 +1318,6 @@ them is the responsibility of more specialized functions."
 (defun rogue/weapon/make (name min-dmg max-dmg)
   "Create a weapon with a NAME as well as MIN-DMG and MAX-DMG values."
   (rogue/item/make 'WEAPON name min-dmg max-dmg))
-
-(defvar +rogue-all-weapons+
-  ;; TODO: Make useful list of weapons.
-  '((SWORD 2 4)
-    (CLUB 3 3)
-    (SPOON 1 2)))
-
-(make-variable-buffer-local '+rogue-all-weapons+)
 
 (defun rogue/weapon/get (name)
   "Get the weapon with the right NAME."
@@ -1346,24 +1366,14 @@ reduced resulting damage. Other actions can be executed as well."
   "Reduce incoming damage by AMOUNT."
   (lambda (damage) (max 0 (- damage amount))))
 
-(defvar +rogue-all-armor+
-  (list
-   `(SHIELD ,(lambda (damage)
-               (if (> (random 2) 0)
-                   damage
-                 (progn
-                   (rogue/fight/add-to-log "You block the attack.")
-                   0))))
-   `(BLADE-MAIL
-    ,(lambda (damage)
-       (let ((returned 1))
-         (rogue/monster/reduce-hp *rogue-current-monster* returned)
-         (rogue/fight/add-to-log "%s takes %d damage"
-                                 (rogue/monster/type *rogue-current-monster*)
-                                 returned))
-       (max 0 (- damage 2))))))
-
-(make-variable-buffer-local '+rogue-all-armor+)
+(defun rogue/armor/damage-blocker (percentage)
+  "Block incoming damage with PERCENTAGE probability."
+  (lambda (damage)
+    (if (>= (random 10) percentage)
+        (progn
+          (rogue/fight/add-to-log "You block the attack.")
+          0)
+      damage)))
 
 (defun rogue/armor/get (name)
   "Get the armor item with the right NAME."
@@ -1384,13 +1394,6 @@ reduced resulting damage. Other actions can be executed as well."
 (defun rogue/consumable/make (name on-consume)
   "Create a consumable item with the given NAME and an ON-CONSUME function."
   (rogue/item/make 'CONSUMABLE name on-consume))
-
-(defvar +rogue-all-consumables+
-  (list
-   `(HEALTH-POTION ,(rogue/function/healer 2))
-   `(MANA-POTION ,(rogue/function/manarest 4))))
-
-(make-variable-buffer-local '+rogue-all-consumables+)
 
 (defun rogue/consumable/get (name)
   "Get the armor item with the right NAME."
