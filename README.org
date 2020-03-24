@@ -1,4 +1,37 @@
 * rogue.el -- A Simple Roguelike for Emacs
+
+#+begin_example
+Level:  1
+Room:   101
+Health: 10/10
+Mana:   10/10
+
+Weapon: SWORD
+Armor:  BUCKLER
+Spell:  HEAL
+
+ ┏━━━━━━━┫ ┣━━━━━━━┓
+ ┃                 ┃
+ ┃                 ┃
+ ┃                 ┃
+ ┃                 ┃
+ ┃        S        ┃
+ ┃                 ┻
+ ┃        @
+ ┃                 ┳
+ ┃     S           ┃
+ ┃                 ┃
+ ┃                 ┃
+ ┃                 ┃
+ ┃                 ┃
+ ┗━━━━━━━━━━━━━━━━━┛
+
+
+[up/down/left/right] move -- [s] cast current spell
+[i] access inventory -- [m] access magic menu
+[q] quit the game
+#+end_example
+
   This is mainly a learning project to familiarize myself with basic Emacs
   programming.
 
