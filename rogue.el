@@ -213,20 +213,23 @@
   (set-buffer-multibyte t)
   (rogue/init))
 
-(defun rogue/init ()
-  "Initialize the rooms, monsters, etc."
-  (interactive)
-  (setq *rogue-levels* (rogue/levels/make-all +rogue-num-levels+))
+(defun rogue/init/position-player ()
+  "Place the player at the starting position."
   (setq *rogue-current-level* (assoc 1 *rogue-levels*))
   (setq *rogue-current-room* (rogue/level/room *rogue-current-level* 101))
-  (setq *rogue-player-position* (rogue/room/center *rogue-current-room*))
+  (setq *rogue-player-position* (rogue/room/center *rogue-current-room*)))
+
+(defun rogue/init/restore-player ()
+  "Reset the players health and mana values."
   (setq *rogue-player-max-health* 10)
   (setq *rogue-player-current-health* *rogue-player-max-health*)
   (setq *rogue-player-max-mana* 10)
-  (setq *rogue-player-current-mana* *rogue-player-max-mana*)
-  (setq *rogue-message* "")
+  (setq *rogue-player-current-mana* *rogue-player-max-mana*))
+
+(defun rogue/init/equip-player ()
+  "Initialize the player's inventory and spells."
   (setq *rogue-player-weapon* (rogue/weapon/get 'SWORD))
-  (setq *rogue-player-armor* `((SHIELD ,(rogue/armor/get 'BUCKLER))))
+  (setq *rogue-player-armor* (list (rogue/armor/get 'BUCKLER)))
   (setq *rogue-player-inventory*
         `(,*rogue-player-weapon*
           ,(rogue/consumable/get 'HEALTH-POTION)
@@ -234,9 +237,18 @@
           ,@*rogue-player-armor*))
   (setq *rogue-player-spell* (rogue/spell/get 'HEAL))
   (setq *rogue-player-available-spells*
-        (list *rogue-player-spell* (rogue/spell/get 'LIGHTNING)))
+        (list *rogue-player-spell* (rogue/spell/get 'LIGHTNING))))
+
+(defun rogue/init ()
+  "Initialize the rooms, monsters, etc."
+  (interactive)
+  (setq *rogue-levels* (rogue/levels/make-all +rogue-num-levels+))
   (setq *rogue-current-monster* nil)
+  (rogue/init/position-player)
+  (rogue/init/restore-player)
+  (rogue/init/equip-player)
   (setq *rogue-fight-log* nil)
+  (setq *rogue-message* "")
   (rogue/draw/dungeon))
 
 (defun rogue/quit ()
