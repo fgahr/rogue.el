@@ -48,7 +48,7 @@ Spell:  HEAL
 * Code
   There is no game loop. Quite possibly a classic game loop would simplify
   things. However, since in a typical (well, this one at least) roguelike all
-  events are triggered by player actions, we can get away by simply using the
+  events are triggered by player actions, we can get away with simply using the
   right keymaps at the right time and trigger all other actions after the
   player's move. However, this design requires rather unwieldy handling of
   global state and managing rather intricate function call chains. As of
