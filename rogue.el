@@ -1244,10 +1244,7 @@ SPECIFICS relating to its type can be given as well."
           (push m monsters-after-move))))))
 
 (defun rogue/monsters/make (type)
-  "Create a new monster of type TYPE.
-
-A monster is represented by a structure as follows:
-'(TYPE SYMBOL (CURRENT-HP . MAX-HP) DAMAGE POSITION)."
+  "Create a new monster of the given TYPE."
   (cond
    ((eq type 'OGRE)
     (rogue/monster :type 'OGRE :symbol "O" :max-hp 5 :hp 5 :damage 1))
@@ -1280,7 +1277,7 @@ A monster is represented by a structure as follows:
 
 (defun rogue/monster/set-position (monster position)
   "Set the MONSTER's location to POSITION."
-  (setcar (nthcdr 4 monster) position))
+  (setf (rogue/monster/pos monster) position))
 
 (defun rogue/monster/alive-p (monster)
   "Whether MONSTER is alive."
