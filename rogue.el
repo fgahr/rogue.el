@@ -1003,7 +1003,7 @@ relevant variables."
     (dolist (monster monsters)
       (let ((position (rogue/roll-monster-position dimensions occupied)))
         (push position occupied)
-        (rogue/monster/set-position monster position)))
+        (setf (rogue/monster/pos monster) position)))
     (setcar (nthcdr 3 room) monsters)))
 
 (defun rogue/room/place-object-center (room object)
@@ -1192,6 +1192,33 @@ SPECIFICS relating to its type can be given as well."
 
 ;;; Monsters ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defclass rogue/monster ()
+  ((type :initarg :type
+         :type symbol
+         :accessor rogue/monster/type
+         :documentation "The monster's type.")
+   (symbol :initarg :symbol
+           :type string
+           :accessor rogue/monster/symbol
+           :documentation "The monster's symbol/representation on the map.")
+   (hp :initarg :hp
+       :type integer
+       :accessor rogue/monster/hp
+       :documentation "The monster's current hitpoints.")
+   (max-hp :initarg :max-hp
+           :type integer
+           :accessor rogue/monster/max-hp
+           :documentation "The monster's maximum/initial hitpoints.")
+   (damage :initarg :damage
+           :type integer
+           :accessor rogue/monster/damage
+           :documentation "The monster's attack damage.")
+   (pos :initarg :pos
+        :type (or null rogue/pos)
+        :accessor rogue/monster/pos
+        :documentation "The monster's current position."))
+  :documentation "A monster roaming the dungeon.")
+
 (defun rogue/monsters/monster-at (pos monsters)
   "Find the monster at POS in the list of MONSTERS."
   (seq-find (lambda (m)
@@ -1213,7 +1240,7 @@ SPECIFICS relating to its type can be given as well."
                   (rogue/pos/add m-pos (rogue/pos :x (rogue/util/sign x-diff)))
                 (rogue/pos/add m-pos (rogue/pos :y (rogue/util/sign y-diff))))))
         (unless (rogue/monsters/monster-at new-pos monsters-after-move)
-          (rogue/monster/set-position m new-pos)
+          (setf (rogue/monster/pos m) new-pos)
           (push m monsters-after-move))))))
 
 (defun rogue/monsters/make (type)
@@ -1223,17 +1250,17 @@ A monster is represented by a structure as follows:
 '(TYPE SYMBOL (CURRENT-HP . MAX-HP) DAMAGE POSITION)."
   (cond
    ((eq type 'OGRE)
-    (list type "O" (cons 5 5) 1 nil))
+    (rogue/monster :type 'OGRE :symbol "O" :max-hp 5 :hp 5 :damage 1))
    ((eq type 'SKELETON)
-    (list type "S" (cons 3 3) 1 nil))
+    (rogue/monster :type 'SKELETON :symbol "S" :max-hp 3 :hp 3 :damage 1))
    ((eq type 'GOAT)
-    (list type "G" (cons 4 4) 2 nil))
+    (rogue/monster :type 'GOAT :symbol "G" :max-hp 4 :hp 4 :damage 2))
    ((eq type 'CENTAUR)
-    (list type "C" (cons 11 11) 3 nil))
+    (rogue/monster :type 'CENTAUR :symbol "C" :max-hp 11 :hp 11 :damage 3))
    ((eq type 'MEDUSA)
-    (list type "H" (cons 12 12) 4 nil))
+    (rogue/monster :type 'MEDUSA :symbol "H" :max-hp 12 :hp 12 :damage 4))
    ((eq type 'DRAGON)
-    (list type "D" (cons 18 18) 6 nil))
+    (rogue/monster :type 'DRAGON :symbol "D" :max-hp 18 :hp 18 :damage 6))
    (t (error "Unknown monster type '%s'" type))))
 
 (defun rogue/monsters/for-level (level)
@@ -1251,43 +1278,17 @@ A monster is represented by a structure as follows:
                  (seq-random-elt available))))
         (t (error "No monsters defined for level number %d" level))))
 
-(defun rogue/monster/type (monster)
-  "The type of MONSTER."
-  (nth 0 monster))
-
-(defun rogue/monster/symbol (monster)
-  "The symbol representing MONSTER in the dungeon."
-  (nth 1 monster))
-
-(defun rogue/monster/hp (monster)
-  "The current hitpoints of MONSTER."
-  (car (nth 2 monster)))
-
-(defun rogue/monster/max-hp (monster)
-  "The maximal hitpoints of MONSTER."
-  (cdr (nth 2 monster)))
-
-(defun rogue/monster/damage (monster)
-  "The damage dealt by MONSTER."
-  (nth 3 monster))
-
-(defun rogue/monster/pos (monster)
-  "The current position of MONSTER."
-  (nth 4 monster))
-
 (defun rogue/monster/set-position (monster position)
   "Set the MONSTER's location to POSITION."
   (setcar (nthcdr 4 monster) position))
 
 (defun rogue/monster/alive-p (monster)
   "Whether MONSTER is alive."
-  (< 0 (rogue/monster/hp monster)))
+  (> (rogue/monster/hp monster) 0))
 
 (defun rogue/monster/reduce-hp (monster damage)
   "Attack MONSTER with an attack dealing DAMAGE."
-  (let ((current-hp (rogue/monster/hp monster)))
-    (setcar (nth 2 monster)
-            (- current-hp damage))))
+  (cl-decf (rogue/monster/hp monster) damage))
 
 ;;; Game-Specific Utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
