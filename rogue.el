@@ -1600,13 +1600,6 @@ must return a description of the spell's effects."
    (t (cons lower-limit (rogue/util/range (+ lower-limit 1)
                                           upper-limit)))))
 
-(defun rogue/util/any-null-p (sequences)
-  "Whether any of SEQUENCES is empty."
-  (cond
-   ((null sequences) nil)
-   ((null (car sequences)) t)
-   (t (rogue/util/any-null-p (cdr sequences)))))
-
 (defun rogue/util/sign (number)
   "The sign of NUMBER.
 
