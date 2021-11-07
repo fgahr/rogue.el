@@ -16,6 +16,8 @@
 ;; This is not a sign of disdain for Common Lisp, rather than a choice to
 ;; explore the natural capabilities of Emacs Lisp.
 
+(require 'cl-lib)
+(require 'eieio)
 (require 'seq)
 
 ;;; Display ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -40,6 +42,20 @@
 (defconst +rogue/empty-tile+ " " "The representation of an empty dungeon tile.")
 
 ;;; Game State ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; FIXME: break order-dependency of item creation
+;; NOTE: Items are defined at the end of the file.
+
+(defvar *rogue-all-armor* '()
+  "The list of all armor items.")
+(defvar *rogue-all-weapons* '()
+  "The list of all weapon items.")
+(defvar *rogue-all-consumables* '()
+  "The list of all consumable items.")
+
+(make-variable-buffer-local '*rogue-all-armor*)
+(make-variable-buffer-local '*rogue-all-weapons*)
+(make-variable-buffer-local '*rogue-all-consumables*)
 
 ;; Player related
 
@@ -109,35 +125,6 @@
 
 (defvar *rogue-current-monster* nil "The monster currently in battle.")
 (defvar *rogue-fight-log* nil "The log of the current fight's events.")
-
-(defconst +rogue-all-weapons+
-  ;; TODO: Make useful list of weapons.
-  '((SWORD 2 4)
-    (CLUB 3 3)
-    (SPOON 1 2)))
-
-(defconst +rogue-all-armor+
-  (list
-   `(BUCKLER ,(rogue/armor/damage-blocker 40))
-   `(KITE-SHIELD ,(rogue/armor/damage-blocker 50))
-   `(TOWER-SHIELD ,(rogue/armor/damage-blocker 65))
-   `(BLADE-MAIL
-    ,(lambda (damage)
-       (let ((returned 1))
-         (rogue/monster/reduce-hp *rogue-current-monster* returned)
-         (rogue/fight/add-to-log "%s takes %d damage"
-                                 (rogue/monster/type *rogue-current-monster*)
-                                 returned))
-       (max 0 (- damage 2))))))
-
-(defconst +rogue-all-consumables+
-  (list
-   `(HEALTH-POTION ,(rogue/function/healer 2))
-   `(MANA-POTION ,(rogue/function/manarest 4))))
-
-(make-variable-buffer-local '+rogue-all-consumables+)
-(make-variable-buffer-local '+rogue-all-armor+)
-(make-variable-buffer-local '+rogue-all-weapons+)
 
 ;;; Keymaps ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -239,6 +226,31 @@
   (setq *rogue-player-available-spells*
         (list *rogue-player-spell* (rogue/spell/get 'LIGHTNING))))
 
+(defun rogue/init/item-collections ()
+  "Initialize item collections."
+    (setq *rogue-all-weapons*
+          ;; TODO: Make useful list of weapons.
+          '((SWORD 2 4)
+            (CLUB 3 3)
+            (SPOON 1 2)))
+    (setq *rogue-all-armor*
+          (list
+           `(BUCKLER ,(rogue/armor/damage-blocker 40))
+           `(KITE-SHIELD ,(rogue/armor/damage-blocker 50))
+           `(TOWER-SHIELD ,(rogue/armor/damage-blocker 65))
+           `(BLADE-MAIL
+             ,(lambda (damage)
+                (let ((returned 1))
+                  (rogue/monster/reduce-hp *rogue-current-monster* returned)
+                  (rogue/fight/add-to-log "%s takes %d damage"
+                                          (rogue/monster/type *rogue-current-monster*)
+                                          returned))
+                (max 0 (- damage 2))))))
+    (setq *rogue-all-consumables*
+          (list
+           `(HEALTH-POTION ,(rogue/function/healer 2))
+           `(MANA-POTION ,(rogue/function/manarest 4)))))
+
 (defun rogue/init ()
   "Initialize the rooms, monsters, etc."
   (interactive)
@@ -246,6 +258,7 @@
   (setq *rogue-current-monster* nil)
   (rogue/init/position-player)
   (rogue/init/restore-player)
+  (rogue/init/item-collections)
   (rogue/init/equip-player)
   (setq *rogue-fight-log* nil)
   (setq *rogue-message* "")
@@ -275,6 +288,7 @@
 
 (defmacro rogue/draw/with-writable-buffer (&rest body)
   "Execute BODY within a writable buffer."
+  (declare (indent 1))
   `(progn (setq-local buffer-read-only nil)
           (erase-buffer)
           ,@body
@@ -314,7 +328,7 @@
            (insert "[+] ")
          (insert "[ ] "))
        (insert (format "%s\n" (rogue/item/name item)))
-       (setq counter (1+ counter))))
+       (cl-incf counter)))
    (newline)
    (insert *rogue-message*)
    (newline)
@@ -333,7 +347,7 @@
            (insert "[+] ")
          (insert "[ ] "))
        (insert (format "%s\n" (rogue/spell/name spell)))
-       (setq counter (1+ counter))))
+       (cl-incf counter)))
    (newline)
    (insert +rogue/magic-menu/usage+)))
 
@@ -383,10 +397,10 @@
          (padding (make-string left-pad ?\ ))
          (dim-x (rogue/dim/x room-dims))
          (dim-y (rogue/dim/y room-dims))
-         (has-north-door (seq-contains door-places 'NORTH))
-         (has-east-door (seq-contains door-places 'EAST))
-         (has-south-door (seq-contains door-places 'SOUTH))
-         (has-west-door (seq-contains door-places 'WEST))
+         (has-north-door (seq-contains-p door-places 'NORTH))
+         (has-east-door (seq-contains-p door-places 'EAST))
+         (has-south-door (seq-contains-p door-places 'SOUTH))
+         (has-west-door (seq-contains-p door-places 'WEST))
          (horiz-door-line (/ (1- dim-y) 2)))
     (insert padding)
     (cond
@@ -423,7 +437,7 @@ Place the player as well as MONSTERS and OBJECTS where appropriate."
     (dotimes (k (- (rogue/dim/x room-dims)
                    2))
       (let* ((x (+ k 1))
-             (pos (rogue/pos x y))
+             (pos (rogue/pos :x x :y y))
              (m (rogue/monsters/monster-at pos monsters))
              (o (rogue/objects/object-at pos objects)))
         (cond
@@ -489,21 +503,23 @@ If HAS-DOOR is non-nil, add a door in its center."
     (setq *rogue-player-position*
           (cond
            ((equal target-placement 'NORTH)
-            (rogue/pos (rogue/pos/x center) 1))
+            (rogue/pos :x (rogue/pos/x center)
+                       :y 1))
            ((equal target-placement 'SOUTH)
-            (rogue/pos (rogue/pos/x center)
-                       (- (rogue/dim/y dims) 2)))
+            (rogue/pos :x (rogue/pos/x center)
+                       :y (- (rogue/dim/y dims) 2)))
            ((equal target-placement 'WEST)
-            (rogue/pos 1 (rogue/pos/y center)))
+            (rogue/pos :x 1
+                       :y (rogue/pos/y center)))
            ((equal target-placement 'EAST)
-            (rogue/pos (- (rogue/dim/x dims) 2) (rogue/pos/y center)))))
+            (rogue/pos :x (- (rogue/dim/x dims) 2)
+                       :y (rogue/pos/y center)))))
     (setq *rogue-current-room* target-room))
   (rogue/draw/dungeon))
 
 (defun rogue/player/make-move (modifier-function)
   "Attempt to make a move based on the MODIFIER-FUNCTION."
-  (let ((old-pos (rogue/pos (rogue/pos/x *rogue-player-position*)
-                            (rogue/pos/y *rogue-player-position*))))
+  (let ((old-pos (rogue/pos/copy *rogue-player-position*)))
     (funcall modifier-function *rogue-player-position*)
     (cond
      ((rogue/player/wall-collision-p)
@@ -516,22 +532,22 @@ If HAS-DOOR is non-nil, add a door in its center."
 (defun rogue/player/move-left ()
   "Move the player to the left."
   (interactive)
-  (rogue/player/make-move #'rogue/pos/x-dec))
+  (rogue/player/make-move #'rogue/pos/dec-x))
 
 (defun rogue/player/move-right ()
   "Move the player to the right."
   (interactive)
-  (rogue/player/make-move #'rogue/pos/x-inc))
+  (rogue/player/make-move #'rogue/pos/inc-x))
 
 (defun rogue/player/move-up ()
   "Move the player up."
   (interactive)
-  (rogue/player/make-move #'rogue/pos/y-dec))
+  (rogue/player/make-move #'rogue/pos/dec-y))
 
 (defun rogue/player/move-down ()
   "Move the player down."
   (interactive)
-  (rogue/player/make-move #'rogue/pos/y-inc))
+  (rogue/player/make-move #'rogue/pos/inc-y))
 
 (defun rogue/player/check-collisions ()
   "Check the current player position for possible collisions and react."
@@ -774,13 +790,13 @@ Format according to the format STRING using ARGS."
   (let* ((roll (random 32))
          (item (cond ((< roll 1)
                       (apply #'rogue/weapon/make
-                             (seq-random-elt +rogue-all-weapons+)))
+                             (seq-random-elt *rogue-all-weapons*)))
                      ((< roll 2)
                       (apply #'rogue/armor/make
-                             (seq-random-elt +rogue-all-armor+)))
+                             (seq-random-elt *rogue-all-armor*)))
                      ((< roll 8)
                       (apply #'rogue/consumable/make
-                             (seq-random-elt +rogue-all-consumables+)))
+                             (seq-random-elt *rogue-all-consumables*)))
                      (t nil))))
     (when item
       (rogue/inventory/add-item item)
@@ -848,6 +864,154 @@ Format according to the format STRING using ARGS."
            (rogue/fight/loot))
           (t (rogue/draw/fight)))))
 
+;;; Positioning ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defclass rogue/pos ()
+  ((x :initarg :x
+      :initform 0
+      :type integer
+      :accessor rogue/pos/x
+      :documentation "Position X component.")
+   (y :initarg :y
+      :initform 0
+      :type integer
+      :accessor rogue/pos/y
+      :documentation "Position Y component."))
+  :documentation "A position in the current room.")
+
+(defun rogue/pos/copy (pos)
+  "Create a copy of the given position POS."
+  (rogue/pos :x (rogue/pos/x pos)
+             :y (rogue/pos/y pos)))
+
+(defun rogue/pos/add (pos-a pos-b)
+  "Add coordinates of position POS-A and POS-B."
+  (rogue/pos :x (+ (rogue/pos/x pos-a) (rogue/pos/x pos-b))
+             :y (+ (rogue/pos/y pos-a) (rogue/pos/y pos-b))))
+
+(defun rogue/pos/within-one (pos-a pos-b)
+  "Whether positions POS-A and POS-B are in immediate proximity."
+  (let ((x-diff (abs (- (oref pos-a x) (oref pos-b x))))
+        (y-diff (abs (- (oref pos-a y) (oref pos-b y)))))
+    (or (and (= x-diff 0) (<= y-diff 1))
+        (and (= y-diff 0) (<= x-diff 1)))))
+
+(defun rogue/pos/inc-x (pos)
+  "Increase the X component of position POS."
+  (cl-incf (rogue/pos/x pos)))
+
+(defun rogue/pos/dec-x (pos)
+  "Decrease the X component of position POS."
+  (cl-decf (rogue/pos/x pos)))
+
+(defun rogue/pos/inc-y (pos)
+  "Increase the Y component of position POS."
+  (cl-incf (rogue/pos/y pos)))
+
+(defun rogue/pos/dec-y (pos)
+  "Decrease the Y component of position POS."
+  (cl-decf (rogue/pos/y pos)))
+
+(defclass rogue/dim ()
+  ((x :initarg :x
+      :initform 0
+      :accessor rogue/dim/x
+      :documentation "Dimension X component.")
+   (y :initarg :y
+      :initform 0
+      :accessor rogue/dim/y
+      :documentation "Dimension Y component."))
+  :documentation "The dimensions of a room or game object.")
+
+(defun rogue/dim/center (dim)
+  "The position at the center of the area described by DIM."
+  (rogue/pos :x (/ (oref dim x) 2)
+             :y (/ (oref dim y) 2)))
+
+;;; Rooms ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun rogue/roll-monster-position (dimensions occupied)
+  "Find a random position within DIMENSIONS outside the OCCUPIED spaces."
+  ;; Don't place monsters on wall tiles.
+  (let* ((x (+ 2 (random (- (rogue/dim/x dimensions) 4))))
+         (y (+ 2 (random (- (rogue/dim/y dimensions) 4))))
+         (pos (rogue/pos :x x :y y)))
+    (if (or (seq-contains-p occupied pos)
+            ;; Center tiles of rooms are reserved for other entities.
+            (equal pos (rogue/dim/center dimensions)))
+        (rogue/roll-monster-position dimensions occupied)
+      pos)))
+
+(defun rogue/rooms/side-len ()
+  "One random side length of a room.
+
+Possible sizes are delimited by +ROGUE-MIN-SIDE-LENGTH+ and
++ROGUE-MAX-SIDE-LENGTH+. Always returns an odd number for easier symmetry."
+  (let ((addend
+         (/ (- +rogue-room-max-side-length+ +rogue-room-min-side-length+) 2)))
+    (+ (* 2 (/ +rogue-room-min-side-length+ 2)) (* 2 (random addend)) 1)))
+
+(defun rogue/room/make (room-number adjacent-rooms)
+  "Create room ROOM-NUMBER in LEVEL with and doors leading to ADJACENT-ROOMS.
+
+Dimensions, monsters, and objects are chosen randomly in accordance with the
+relevant variables."
+  (let* ((dimensions (rogue/dim :x (rogue/rooms/side-len)
+                                :y (rogue/rooms/side-len)))
+         (doors (rogue/doors/place adjacent-rooms))
+         (monsters '())
+         (objects '()))
+    (list room-number dimensions doors monsters objects)))
+
+(defun rogue/room/number (room)
+  "The number of ROOM."
+  (nth 0 room))
+
+(defun rogue/room/dims (room)
+  "The dimensions of ROOM."
+  (nth 1 room))
+
+(defun rogue/room/center (room)
+  "The center position of ROOM."
+  (rogue/dim/center (rogue/room/dims room)))
+
+(defun rogue/room/doors (room)
+  "The list of doors from ROOM."
+  (nth 2 room))
+
+(defun rogue/room/monsters (room)
+  "The list of monsters from ROOM."
+  (seq-filter #'rogue/monster/alive-p
+              (nth 3 room)))
+
+(defun rogue/room/objects (room)
+  "The list of objects from ROOM."
+  (nth 4 room))
+
+(defun rogue/room/occupied-places (room)
+  "Places in ROOM that are occupied by monsters or objects."
+  ;; The center is always considered occupied.
+  (cons (rogue/room/center room)
+        (append (mapcar #'rogue/object/pos (rogue/room/objects room))
+                (mapcar #'rogue/monster/pos (rogue/room/monsters room)))))
+
+(defun rogue/room/place-monsters (room monster-types)
+  "Place monsters of MONSTER-TYPES in ROOM."
+  (let ((dimensions (rogue/room/dims room))
+        (monsters (mapcar #'rogue/monsters/make monster-types))
+        (occupied (list (rogue/room/center room))))
+    (dolist (monster monsters)
+      (let ((position (rogue/roll-monster-position dimensions occupied)))
+        (push position occupied)
+        (rogue/monster/set-position monster position)))
+    (setcar (nthcdr 3 room) monsters)))
+
+(defun rogue/room/place-object-center (room object)
+  "Add OBJECT to ROOM."
+  (rogue/object/place-at object (rogue/room/center room))
+  (setcar (nthcdr 4 room)
+          (cons object (rogue/room/objects room))))
+
 ;;; Levels ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun rogue/levels/make-all (num-levels)
@@ -914,90 +1078,6 @@ Format according to the format STRING using ARGS."
       (when (null room)
         (error "No such room: %d" room-number))
       room)))
-
-;;; Rooms ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defun rogue/roll-monster-position (dimensions occupied)
-  "Find a random position within DIMENSIONS outside the OCCUPIED spaces."
-  ;; Don't place monsters on wall tiles.
-  (let* ((x (+ 2 (random (- (rogue/dim/x dimensions) 4))))
-         (y (+ 2 (random (- (rogue/dim/y dimensions) 4))))
-         (pos (rogue/pos x y)))
-    (if (or (seq-contains occupied pos)
-            ;; Center tiles of rooms are reserved for other entities.
-            (equal pos (rogue/dim/center dimensions)))
-        (rogue/roll-monster-position dimensions occupied)
-      pos)))
-
-(defun rogue/rooms/side-len ()
-  "One random side length of a room.
-
-Possible sizes are delimited by +ROGUE-MIN-SIDE-LENGTH+ and
-+ROGUE-MAX-SIDE-LENGTH+. Always returns an odd number for easier symmetry."
-  (let ((addend
-         (/ (- +rogue-room-max-side-length+ +rogue-room-min-side-length+) 2)))
-    (+ (* 2 (/ +rogue-room-min-side-length+ 2)) (* 2 (random addend)) 1)))
-
-(defun rogue/room/make (room-number adjacent-rooms)
-  "Create room ROOM-NUMBER in LEVEL with and doors leading to ADJACENT-ROOMS.
-
-Dimensions, monsters, and objects are chosen randomly in accordance with the
-relevant variables."
-  (let* ((dimensions (rogue/dim (rogue/rooms/side-len)
-                                (rogue/rooms/side-len)))
-         (doors (rogue/doors/place adjacent-rooms))
-         (monsters '())
-         (objects '()))
-    (list room-number dimensions doors monsters objects)))
-
-(defun rogue/room/number (room)
-  "The number of ROOM."
-  (nth 0 room))
-
-(defun rogue/room/dims (room)
-  "The dimensions of ROOM."
-  (nth 1 room))
-
-(defun rogue/room/center (room)
-  "The center position of ROOM."
-  (rogue/dim/center (rogue/room/dims room)))
-
-(defun rogue/room/doors (room)
-  "The list of doors from ROOM."
-  (nth 2 room))
-
-(defun rogue/room/monsters (room)
-  "The list of monsters from ROOM."
-  (seq-filter #'rogue/monster/alive-p
-              (nth 3 room)))
-
-(defun rogue/room/objects (room)
-  "The list of objects from ROOM."
-  (nth 4 room))
-
-(defun rogue/room/occupied-places (room)
-  "Places in ROOM that are occupied by monsters or objects."
-  ;; The center is always considered occupied.
-  (cons (rogue/room/center room)
-        (append (mapcar #'rogue/object/pos (rogue/room/objects room))
-                (mapcar #'rogue/monster/pos (rogue/room/monsters room)))))
-
-(defun rogue/room/place-monsters (room monster-types)
-  "Place monsters of MONSTER-TYPES in ROOM."
-  (let ((dimensions (rogue/room/dims room))
-        (monsters (mapcar #'rogue/monsters/make monster-types))
-        (occupied (list (rogue/room/center room))))
-    (dolist (monster monsters)
-      (let ((position (rogue/roll-monster-position dimensions occupied)))
-        (push position occupied)
-        (rogue/monster/set-position monster position)))
-    (setcar (nthcdr 3 room) monsters)))
-
-(defun rogue/room/place-object-center (room object)
-  "Add OBJECT to ROOM."
-  (rogue/object/place-at object (rogue/room/center room))
-  (setcar (nthcdr 4 room)
-          (cons object (rogue/room/objects room))))
 
 ;;; Doors ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -1130,8 +1210,8 @@ SPECIFICS relating to its type can be given as well."
                         (rogue/pos/y (rogue/monster/pos m))))
              (new-pos
               (if (> (abs x-diff) (abs y-diff))
-                  (rogue/pos/add m-pos (rogue/pos (rogue/util/sign x-diff) 0))
-                (rogue/pos/add m-pos (cons 0 (rogue/util/sign y-diff))))))
+                  (rogue/pos/add m-pos (rogue/pos :x (rogue/util/sign x-diff)))
+                (rogue/pos/add m-pos (rogue/pos :y (rogue/util/sign y-diff))))))
         (unless (rogue/monsters/monster-at new-pos monsters-after-move)
           (rogue/monster/set-position m new-pos)
           (push m monsters-after-move))))))
@@ -1336,11 +1416,11 @@ them is the responsibility of more specialized functions."
   (let* ((weapon-stats
           (if (null name)
               '(FIST 1 1)
-            (assoc name +rogue-all-weapons+))))
+            (assoc name *rogue-all-weapons*))))
     (unless weapon-stats
       (error "Unknown weapon name '%s'. Available: %S"
              name
-             (mapcar #'car +rogue-all-weapons+)))
+             (mapcar #'car *rogue-all-weapons*)))
     (apply #'rogue/weapon/make weapon-stats)))
 
 (defun rogue/weapon/dmg (weapon)
@@ -1390,7 +1470,7 @@ reduced resulting damage. Other actions can be executed as well."
 (defun rogue/armor/get (name)
   "Get the armor item with the right NAME."
   (let ((armor-stats
-         (assoc name +rogue-all-armor+)))
+         (assoc name *rogue-all-armor*)))
     (unless armor-stats
       (error "Unknown armor name '%s'" name))
     (apply #'rogue/armor/make armor-stats)))
@@ -1410,7 +1490,7 @@ reduced resulting damage. Other actions can be executed as well."
 (defun rogue/consumable/get (name)
   "Get the armor item with the right NAME."
   (let ((consumable-stats
-         (assoc name +rogue-all-consumables+)))
+         (assoc name *rogue-all-consumables*)))
     (unless consumable-stats
       (error "Unknown consumable name '%s'" name))
     (apply #'rogue/consumable/make consumable-stats)))
@@ -1426,7 +1506,7 @@ must return a description of the spell's effects."
 
 (defun rogue/spell/learn (spell)
   "Make SPELL available to the player."
-  (unless (seq-contains *rogue-player-available-spells* spell)
+  (unless (seq-contains-p *rogue-player-available-spells* spell)
     (push spell *rogue-player-available-spells*)))
 
 (defvar +rogue-all-spells+
@@ -1486,75 +1566,6 @@ must return a description of the spell's effects."
 (defun rogue/spell/active-p (spell)
   "Whether SPELL is currently active."
   (eq spell *rogue-player-spell*))
-
-;;; Positioning ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defun rogue/pos (x y)
-  "The position at X, Y."
-  (cons x y))
-
-(defun rogue/pos/x (p)
-  "The X component of position P."
-  (car p))
-
-(defun rogue/pos/y (p)
-  "The Y component of position P."
-  (cdr p))
-
-(defun rogue/pos/add (pos-a pos-b)
-  "Add coordinates of position POS-A and POS-B."
-  (rogue/pos (+ (rogue/pos/x pos-a) (rogue/pos/x pos-b))
-             (+ (rogue/pos/y pos-a) (rogue/pos/y pos-b))))
-
-(defun rogue/pos/within-one (pos-a pos-b)
-  "Whether positions POS-A and POS-B are in immediate proximity."
-  (let ((x-diff (abs (- (rogue/pos/x pos-a) (rogue/pos/x pos-b))))
-        (y-diff (abs (- (rogue/pos/y pos-a) (rogue/pos/y pos-b)))))
-    (or (and (= x-diff 0) (<= y-diff 1))
-        (and (= y-diff 0) (<= x-diff 1)))))
-
-(defun rogue/pos/x-inc (p)
-  "Increase the X component of position P."
-  (let ((x (rogue/pos/x p)))
-    (setcar p
-            (1+ x))))
-
-(defun rogue/pos/x-dec (p)
-  "Decrease the X component of position P."
-  (let ((x (rogue/pos/x p)))
-    (setcar p
-            (1- x))))
-
-(defun rogue/pos/y-inc (p)
-  "Increase the X component of position P."
-  (let ((y (rogue/pos/y p)))
-    (setcdr p
-            (1+ y))))
-
-(defun rogue/pos/y-dec (p)
-  "Decrease the X component of position P."
-  (let ((y (rogue/pos/y p)))
-    (setcdr p
-            (1- y))))
-
-(defun rogue/dim (x y)
-  "A dimension object of size X, Y."
-  (cons x y))
-
-(defun rogue/dim/x (d)
-  "The X dimension of D."
-  (car d))
-
-(defun rogue/dim/y (d)
-  "The Y dimension of D."
-  (cdr d))
-
-(defun rogue/dim/center (dim)
-  "The center of the area described by DIM."
-  (rogue/pos (/ (rogue/dim/x dim)
-                2)
-             (/ (rogue/dim/y dim)
-                2)))
 
 ;;; General Utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
